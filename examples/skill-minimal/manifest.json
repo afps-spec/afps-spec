@@ -1,0 +1,8 @@
+{
+  "$schema": "https://afps.dev/schema/v0/skill.schema.json",
+  "name": "@example/rewrite-tone",
+  "version": "1.0.0",
+  "type": "skill",
+  "schema_version": "0.1",
+  "display_name": "Rewrite Tone"
+}

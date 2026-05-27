@@ -1,0 +1,23 @@
+# @afps-spec/types
+
+TypeScript bindings for AFPS 0.1 contracts.
+
+This package is the canonical TS projection of the language-agnostic
+AFPS specification (see [`afps-spec/spec.md`](https://github.com/afps-spec/afps-spec/blob/main/spec.md)).
+It declares types only — no runtime behavior — so any AFPS-compliant
+TypeScript tool, runtime, or runner can depend on it to share
+vocabulary without coupling to a specific implementation.
+
+## What's in
+
+- **Manifest refs** (`DependencyRef`, `SkillRef`, `McpServerRef`, `IntegrationRef`, `JSONSchema`) — parallel to the Zod schemas in `@afps-spec/schema`.
+- **Tool protocol** (`Tool`, `ToolContext`, `ToolResult`) — the shape every AFPS tool implementation MUST satisfy.
+- **Wire envelope** (`RunEvent`) — open event shape flowing from tools to sinks.
+
+## What's out
+
+Runtime-internal interfaces (bundle loader APIs, resolver interfaces,
+sink interfaces, aggregated run state) live in the runtime package
+that owns the implementation — e.g. `@your-org/afps-runtime`. They
+describe how a specific TypeScript runtime wires itself up
+internally, not contracts shared across the ecosystem.
