@@ -1179,15 +1179,37 @@ describe("integration tools/uris/setup_guide (§7.8 – §7.10)", () => {
       },
       tools_policy: {
         list_issues: {
-          required_scopes: ["repo"],
-          required_auth_key: "oauth",
-          url_patterns: [{ pattern: "https://api.github.com/**", methods: ["GET"] }],
+          required_scopes: { oauth: ["repo"] },
         },
       },
       icon: "icon.png",
       setup_guide: {
         callback_url_hint: "Set redirect URI to: {{callback_url}}",
         steps: [{ label: "Create app", url: "https://e.com/apps" }, { label: "Copy credentials" }],
+      },
+    });
+  });
+
+  test("required_scopes rejects the legacy flat-array form", () => {
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      tools_policy: {
+        list_issues: {
+          // pre-0.4 shape — now must be a per-auth map { <auth_key>: string[] }
+          required_scopes: ["repo"] as never,
+        },
+      },
+    });
+  });
+
+  test("required_scopes rejects a malformed auth-key map key", () => {
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      tools_policy: {
+        list_issues: {
+          // map key must match AUTH_KEY_REGEX (^[a-z][a-z0-9_]*$)
+          required_scopes: { "Bad-Key": ["repo"] },
+        },
       },
     });
   });
