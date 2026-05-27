@@ -1190,6 +1190,30 @@ describe("integration tools/uris/setup_guide (§7.8 – §7.10)", () => {
     });
   });
 
+  test("required_scopes rejects the legacy flat-array form", () => {
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      tools_policy: {
+        list_issues: {
+          // pre-0.4 shape — now must be a per-auth map { <auth_key>: string[] }
+          required_scopes: ["repo"] as never,
+        },
+      },
+    });
+  });
+
+  test("required_scopes rejects a malformed auth-key map key", () => {
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      tools_policy: {
+        list_issues: {
+          // map key must match AUTH_KEY_REGEX (^[a-z][a-z0-9_]*$)
+          required_scopes: { "Bad-Key": ["repo"] },
+        },
+      },
+    });
+  });
+
   test("setup_guide step requires a label", () => {
     expectInvalid(integrationManifestSchema, {
       ...validIntegrationOauth2,

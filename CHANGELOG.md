@@ -1,5 +1,22 @@
 # Changelog
 
+## Schema `@afps-spec/schema@0.4.0` — 2026-05-27
+
+Breaking schema change (no spec-version bump; `0.x` makes no back-compat promise).
+
+- `integration.tools_policy.<tool>.required_scopes` is now a **per-auth map**
+  `{ <auth_key>: string[] }` (was a flat `string[]`). Scopes are declared against
+  the specific auth that grants them; each map key MUST be a declared `auths` key
+  and its scopes MUST be a subset of that auth's `scope_catalog`.
+- Removed `tools_policy.<tool>.scope_auth_key` — the per-auth map makes the scope
+  anchor explicit, so the separate selector is redundant.
+- Removed `tools_policy.<tool>.url_patterns` — per-tool URL allowlisting is
+  redundant with the auth-method `authorized_uris` floor (a single MCP server has
+  one address; per-tool URLs added no enforceable granularity).
+
+(Schema `0.2.0`/`0.3.0` — `integrations_configuration` split — were published
+without a changelog entry.)
+
 ## v0.1.0 — 2026-05-26
 
 Initial public draft of the Agent Format Packaging Standard.

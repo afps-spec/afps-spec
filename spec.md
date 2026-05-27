@@ -1062,7 +1062,7 @@ When `integration.tools_policy.<name>` is declared, it **augments** the canonica
 
 `integration.hidden_tools` is an OPTIONAL array of tool names. Tools listed here exist in the resolved canonical catalog but MUST NOT be exposed to the agent's tool picker / `tools/list` surface. Tools referenced by a `connect.tool` (run-start primitives) are auto-hidden, so `hidden_tools` only needs to enumerate the remaining tool names to suppress.
 
-> **Note (placement).** Per-tool policy lives on the integration because the policy itself (required scopes, allowed URL patterns, auth-key selection) is a property of how the credentialed binding is used, not of the server's tool list.
+> **Note (placement).** Per-tool policy lives on the integration because the policy itself (the per-auth `required_scopes` map) is a property of how the credentialed binding is used, not of the server's tool list.
 
 ### 7.9 URI Restrictions
 
