@@ -1,0 +1,17 @@
+AFPS — Agent Format Packaging Standard
+Copyright 2026 AFPS contributors
+
+This specification and its reference packages are licensed under the
+Apache License, Version 2.0 (Apache-2.0).
+See the LICENSE file for the full license text.
+
+This project includes the following third-party dependencies
+(used in the schema validation tooling):
+
+  zod — MIT License
+  Copyright (c) Colin McDonnell
+  https://github.com/colinhacks/zod
+
+  semver — ISC License
+  Copyright (c) Isaac Z. Schlueter and Contributors
+  https://github.com/npm/node-semver
