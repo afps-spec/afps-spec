@@ -3,7 +3,7 @@
   "name": "@example/customer-intake",
   "version": "1.2.0",
   "type": "agent",
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "display_name": "Customer Intake Assistant",
   "description": "Collects inbound requests and prepares a structured summary.",
   "keywords": ["workflow", "intake", "support"],
@@ -18,14 +18,17 @@
       "@example/fetch-json": "^1.0.0"
     },
     "integrations": {
-      "@example/gmail": {
-        "version": "^1.0.0",
-        "scopes": [
-          "https://www.googleapis.com/auth/gmail.readonly",
-          "https://www.googleapis.com/auth/gmail.send"
-        ],
-        "auth_key": "oauth"
-      }
+      "@example/gmail": "^1.0.0"
+    }
+  },
+  "integrations_configuration": {
+    "@example/gmail": {
+      "tools": ["list_messages", "send_message"],
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.send"
+      ],
+      "auth_key": "oauth"
     }
   },
   "input": {
