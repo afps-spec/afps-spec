@@ -177,7 +177,7 @@ An integration is a credentialed binding to an external service — it describes
   "type": "integration",
   "schema_version": "0.1",
   "display_name": "OpenAI",
-  "source": { "kind": "api", "api": {} },
+  "source": { "kind": "none" },
   "auths": {
     "api_key": {
       "type": "api_key",

@@ -64,7 +64,7 @@ jobs:
             fi
 
             echo "Validating $manifest against $schema..."
-            ajv validate -s "$schema" -d "$manifest" --spec=draft2020 || exit 1
+            ajv validate -c ajv-formats -s "$schema" -d "$manifest" --spec=draft2020 || exit 1
           done
           echo "All examples are valid."
 

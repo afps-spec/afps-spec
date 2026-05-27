@@ -598,7 +598,7 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 - **Type**: object
 - **Required**: MUST for `integration`
 - **Format**: object with a `kind` discriminant and exactly one matching sub-object (§7.1)
-- **Description**: The capability surface the integration binds to: `local` (an `mcp-server`), `remote` (a hosted MCP endpoint), or `api` (an HTTP API).
+- **Description**: The capability surface the integration binds to: `local` (an `mcp-server`), `remote` (a hosted MCP endpoint), or `none` (no MCP backing — capabilities, if any, come from vendor `_meta` extensions).
 - **Example**: `{ "kind": "local", "server": { "name": "@example/gmail-server", "version": "^1.2.0" } }`
 - **Default**: none
 
@@ -852,24 +852,23 @@ An integration authenticates the **upstream-credential hop** — the credential 
 
 ```jsonc
 "source": {
-  "kind": "local" | "remote" | "api",
+  "kind": "local" | "remote" | "none",
 
   // kind = local: reference an mcp-server by AFPS identity + semver range (§2.2, §4).
   "server": { "name": "@example/gmail-server", "version": "^1.2.0", "vendored": true },
 
   // kind = remote: a hosted MCP endpoint.
-  "remote": { "url": "https://example.com/mcp", "transport": "streamable-http" | "sse" },
+  "remote": { "url": "https://example.com/mcp", "transport": "streamable-http" | "sse" }
 
-  // kind = api: a credential-injecting HTTP API surface (no MCP server).
-  "api": { "upload_protocols": ["google-resumable", "s3-multipart", "tus", "ms-resumable"] }
+  // kind = none: no MCP backing; the discriminant is the whole contract.
 }
 ```
 
 - **`local`** — `source.server` references an `mcp-server` package by its AFPS package identity (`name`, a scoped name per §2.2) and a semver `version` range. This is the only source whose referenced server is itself a standalone MCPB-runnable artifact; the integration's authentication layer is applied by the AFPS runtime on top. The optional `vendored` boolean records that the referenced MCP server was vendored into the publishing pipeline at build time (MCPB bundles dependencies into the archive rather than resolving registry references at install time). Build-provenance for a vendored foreign package (for example a [Package URL]) MAY be recorded under `_meta`; it is never the reference mechanism.
 - **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source has no `mcp-server` package and no `.mcpb` form.
-- **`api`** — `source.api` declares a direct HTTP API surface reached through credential injection (no MCP server). `upload_protocols` MAY declare resumable upload protocols the API supports as an **open** array of strings. AFPS v0.1 reserves and recommends the following values for interoperability: `google-resumable`, `s3-multipart`, `tus`, `ms-resumable`. Producers MAY emit other protocol identifiers (preferring a reverse-DNS qualified string such as `com.example/proprietary-resumable` for non-standard protocols) and consumers MUST preserve unknown values without rejecting them. Adding a recommended value does not require a specification revision.
+- **`none`** — the integration declares no MCP backing. It exposes no MCP-tool catalog of its own; any capabilities it offers come from vendor `_meta` extensions (§10) — for example a runtime that injects credentials into a direct HTTP surface. The `kind` discriminant carries no further spec-defined fields. Vendor extensions are non-normative: a runtime that does not recognise them sees an integration with auth methods and no tools.
 
-A source whose surface is not a local MCP server (`remote`, or any non-local API) cannot be expressed as an `mcp-server` package and has no `.mcpb` form. This is a property of the source kind, not a runnability gradient.
+A source whose surface is not a local MCP server (`remote`, or `none`) cannot be expressed as an `mcp-server` package and has no `.mcpb` form. This is a property of the source kind, not a runnability gradient.
 
 ### 7.2 Auth Methods
 
@@ -1054,7 +1053,7 @@ Runtime expressions are embedded into templates with `{$expr}` (for example `{$o
 
 - for `source.kind = local`, the canonical catalog is the `tools[]` array of the referenced `mcp-server` package (§3.4);
 - for `source.kind = remote`, the canonical catalog is obtained by introspecting the remote MCP endpoint at runtime;
-- for `source.kind = api`, there is no MCP-tool catalog and `integration.tools_policy` is generally not used.
+- for `source.kind = none`, there is no MCP-tool catalog and `integration.tools_policy` is generally not used.
 
 When `integration.tools_policy.<name>` is declared, it **augments** the canonical entry for `<name>`. Consumers SHOULD validate at install (or at publish, for a registry) that each key in `integration.tools_policy` corresponds to a tool present in the resolved canonical catalog.
 
@@ -1321,7 +1320,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `server.mcp_config` | mcp-server | object | MUST | `{ command, args?, env?, platform_overrides? }`; MCPB vocabulary | none |
 | `tools` | mcp-server | array | MAY | advisory tool list (`{ name, description }`); MCPB vocabulary | none |
 | `user_config` | mcp-server | object | MAY | user configuration; `sensitive: true` for secrets; MCPB vocabulary | none |
-| `source` | integration | object | MUST | `kind` ∈ `local\|remote\|api` plus matching sub-object | none |
+| `source` | integration | object | MUST | `kind` ∈ `local\|remote\|none` plus matching sub-object (`none` has no sub-object) | none |
 | `source.server` | integration | object | MUST for `kind=local` | `{ name (scoped), version (range), vendored? }` | none |
 | `source.server.name` | integration | string | MUST for `kind=local` | scoped name of the referenced `mcp-server` (§2.2) | none |
 | `source.server.version` | integration | string | MUST for `kind=local` | semver range for the referenced `mcp-server` | none |
@@ -1329,8 +1328,6 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `source.remote` | integration | object | MUST for `kind=remote` | `{ url, transport: streamable-http\|sse }` | none |
 | `source.remote.url` | integration | string | MUST for `kind=remote` | URI of the hosted MCP endpoint | none |
 | `source.remote.transport` | integration | string | MUST for `kind=remote` | `streamable-http\|sse` | none |
-| `source.api` | integration | object | MUST for `kind=api` | `{ upload_protocols?: open string array }` | none |
-| `source.api.upload_protocols` | integration | string[] | MAY | open array; reserved values: `google-resumable`, `s3-multipart`, `tus`, `ms-resumable`. Custom protocols SHOULD use a reverse-DNS prefix | none |
 | `auths` | integration | object | MUST | map keyed by `^[a-z][a-z0-9_]*$`; ≥1 entry | none |
 | `auths.<key>.type` | integration | string | MUST | `oauth2\|api_key\|basic\|mtls\|custom` | none |
 | `auths.<key>.issuer` | integration | string | SHOULD for oauth2 | OAuth/OIDC issuer; enables discovery | none |

@@ -10,8 +10,7 @@
   "icon": "https://cdn.simpleicons.org/openai",
   "repository": "https://platform.openai.com/docs/api-reference",
   "source": {
-    "kind": "api",
-    "api": {}
+    "kind": "none"
   },
   "auths": {
     "api_key": {
