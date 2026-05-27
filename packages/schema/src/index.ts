@@ -2,7 +2,7 @@
 // Copyright (c) 2026 AFPS contributors
 
 /**
- * @afps-spec/schema — AFPS 0.1 Zod schemas for manifest validation.
+ * @afps-spec/schema — AFPS 0.2 Zod schemas for manifest validation.
  *
  * Default exports are AFPS v0 schemas. Use createSchemas(majorVersion)
  * to generate schemas for a specific version.
@@ -13,6 +13,8 @@ export {
   createSchemas,
   // Top-level manifest schemas
   agentManifestSchema,
+  agentManifestObjectSchema,
+  refineIntegrationsConfiguration,
   skillManifestSchema,
   mcpServerManifestSchema,
   integrationManifestSchema,
@@ -22,13 +24,9 @@ export {
   metaSchema,
   schemaObject,
   schemaWrapper,
-  integrationConfiguration,
+  integrationConfigurationObject,
   // dependencies (§4)
   dependenciesSchema,
-  dependencyValue,
-  baseDependencyObject,
-  integrationDependencyValue,
-  integrationDependencyObject,
   // mcp-server (§3.4)
   mcpServerTypeEnum,
   // integration source (§7.1)

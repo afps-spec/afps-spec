@@ -1,7 +1,7 @@
 {
   "name": "@afps-spec/schema",
   "version": "0.2.0",
-  "description": "Zod schemas and generated JSON Schema 2020-12 definitions for AFPS 0.1 manifests (agent, skill, mcp-server, integration).",
+  "description": "Zod schemas and generated JSON Schema 2020-12 definitions for AFPS 0.2 manifests (agent, skill, mcp-server, integration).",
   "keywords": [
     "afps",
     "schema",

@@ -3,7 +3,7 @@
   "$id": "https://schemas.afps.dev/v0/agent.schema.json",
   "$comment": "SPDX-License-Identifier: Apache-2.0 — Copyright (c) 2026 AFPS contributors",
   "title": "AFPS Agent Manifest",
-  "description": "Manifest schema for AFPS 0.1 agent packages. An agent declares dependencies, input/output/config schemas, a timeout hint, and per-integration configuration.",
+  "description": "Manifest schema for AFPS 0.2 agent packages. An agent declares dependencies, input/output/config schemas, a timeout hint, and per-integration configuration.",
   "type": "object",
   "properties": {
     "name": {
@@ -193,23 +193,7 @@
             "pattern": "^@[a-z0-9]([a-z0-9-]*[a-z0-9])?\\/[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
           },
           "additionalProperties": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "version": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "version"
-                ],
-                "additionalProperties": {}
-              }
-            ]
+            "type": "string"
           }
         },
         "mcp_servers": {
@@ -219,23 +203,7 @@
             "pattern": "^@[a-z0-9]([a-z0-9-]*[a-z0-9])?\\/[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
           },
           "additionalProperties": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "version": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "version"
-                ],
-                "additionalProperties": {}
-              }
-            ]
+            "type": "string"
           }
         },
         "integrations": {
@@ -245,33 +213,7 @@
             "pattern": "^@[a-z0-9]([a-z0-9-]*[a-z0-9])?\\/[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
           },
           "additionalProperties": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "version": {
-                    "type": "string"
-                  },
-                  "scopes": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "auth_key": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_]*$"
-                  }
-                },
-                "required": [
-                  "version"
-                ],
-                "additionalProperties": {}
-              }
-            ]
+            "type": "string"
           }
         }
       },
@@ -300,6 +242,12 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "scopes": {
             "type": "array",
             "items": {

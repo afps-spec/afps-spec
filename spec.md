@@ -2,7 +2,7 @@
 
 **Copyright** &copy; 2026 AFPS contributors. Licensed under [Apache-2.0](./LICENSE).
 
-## Version 0.1 -- Draft
+## Version 0.2 -- Draft
 
 ### Abstract
 
@@ -12,11 +12,11 @@ AFPS uses a `snake_case` field vocabulary across all package types. The `mcp-ser
 
 ### Status of this Document
 
-This document is the initial **draft** of the AFPS specification, published at version `0.1` for community review and early implementation feedback. As a `0.x` draft, every part of this specification — field names, package model, and schema system — may change before a stable `1.0` release. There is no commitment to backward compatibility between `0.x` minor revisions.
+This document is a **draft** of the AFPS specification, published at version `0.2` for community review and early implementation feedback. As a `0.x` draft, every part of this specification — field names, package model, and schema system — may change before a stable `1.0` release. There is no commitment to backward compatibility between `0.x` minor revisions.
 
 - **Status**: Draft
-- **Version**: 0.1
-- **Date**: 2026-05-26
+- **Version**: 0.2
+- **Date**: 2026-05-27
 - **Editor**: AFPS contributors
 - **Feedback**: [GitHub Issues](https://github.com/afps-spec/afps-spec/issues) using the [spec change template](https://github.com/afps-spec/afps-spec/issues/new?template=spec-change.yml)
 - **License**: [Apache-2.0](./LICENSE)
@@ -47,7 +47,7 @@ This draft is published for community review and early implementation feedback. 
   - [4.1 Dependency Declaration](#41-dependency-declaration)
   - [4.2 Version Range Resolution](#42-version-range-resolution)
   - [4.3 Circular Dependencies](#43-circular-dependencies)
-  - [4.4 Integration Configuration (Deprecated)](#44-integration-configuration-deprecated)
+  - [4.4 Integration Configuration](#44-integration-configuration)
 - [5. Schema System](#5-schema-system)
   - [5.1 JSON Schema Properties](#51-json-schema-properties)
   - [5.2 File Field Convention](#52-file-field-convention)
@@ -255,7 +255,7 @@ How consumers resolve version ranges against a package catalog is an implementat
 
 ### 2.4 Schema Version Compatibility
 
-AFPS package model evolution is tracked by the `schema_version` field, a `MAJOR.MINOR` string. A change in `MAJOR` indicates a breaking manifest model change; a change in `MINOR` indicates an additive, backwards-compatible revision. Packages targeting this specification emit `schema_version: "0.1"`. While AFPS is at major version `0`, any minor revision MAY introduce breaking changes.
+AFPS package model evolution is tracked by the `schema_version` field, a `MAJOR.MINOR` string. A change in `MAJOR` indicates a breaking manifest model change; a change in `MINOR` indicates an additive, backwards-compatible revision. Packages targeting this specification emit `schema_version: "0.2"`. While AFPS is at major version `0`, any minor revision MAY introduce breaking changes.
 
 `schema_version` applies to all four package types. An `mcp-server` manifest additionally carries `manifest_version`, which tags the MCPB-vocabulary version of its embedded server/tools/user_config block (§3.4); the two version fields are independent.
 
@@ -263,7 +263,7 @@ When a consumer encounters a manifest whose `schema_version` has a higher MAJOR 
 
 When a consumer encounters a manifest whose `schema_version` has the same MAJOR number but a higher MINOR number than the highest version it supports, it SHOULD process the manifest on a best-effort basis. Unknown fields SHOULD be preserved. Consumers MAY emit a warning indicating that some fields may not be fully understood.
 
-When `schema_version` is absent from a `skill`, `mcp-server`, or `integration` manifest (where the field is optional), consumers SHOULD treat the package as targeting schema version `0.1`.
+When `schema_version` is absent from a `skill`, `mcp-server`, or `integration` manifest (where the field is optional), consumers SHOULD treat the package as targeting schema version `0.2`.
 
 ### 2.5 Package Archive Format
 
@@ -439,22 +439,21 @@ All manifests are JSON objects. Unknown top-level fields and unknown nested fiel
 - **Type**: string
 - **Required**: MUST for `agent`; MAY for `skill`, `mcp-server`, and `integration`
 - **Format**: `MAJOR.MINOR` where both segments are non-negative integers (e.g., `0.1`). The format follows a subset of semantic versioning without the patch component. A change in `MAJOR` indicates a breaking manifest model change; a change in `MINOR` indicates an additive, backwards-compatible revision. (While AFPS is at `MAJOR` `0`, a minor revision MAY also break compatibility.)
-- **Description**: Declares which version of the AFPS manifest model the package targets. This field allows consumers to select the appropriate validation rules when the specification evolves. Producers MUST emit at least `0.1` for packages targeting this specification; producers using fields introduced in a later minor revision MUST emit at least the minor that introduced them.
-- **Example**: `0.1`
+- **Description**: Declares which version of the AFPS manifest model the package targets. This field allows consumers to select the appropriate validation rules when the specification evolves. Producers MUST emit at least `0.2` for packages targeting this specification; producers using fields introduced in a later minor revision MUST emit at least the minor that introduced them.
+- **Example**: `0.2`
 - **Default**: none
 
 #### `dependencies`
 - **Type**: object
 - **Required**: MAY
-- **Format**: object containing optional `skills`, `mcp_servers`, and `integrations` maps. Each entry is either a semver-range string (compact form) or an object whose `version` field carries the semver range plus per-dependency configuration (full normative shape in §4.1). For `integrations`, the object form accepts `scopes` and `auth_key` (§7.4, §7.2). Consumers MUST accept both forms; producers MAY use whichever is appropriate.
+- **Format**: object containing optional `skills`, `mcp_servers`, and `integrations` maps. Each map value is a semver-range string (§4.1). The maps declare which packages are depended on and at what versions — nothing more.
 - **Description**: Declares packages that this package depends on. Consumers use this field for dependency resolution, installation, and composition.
-- **Example (compact)**: `{ "integrations": { "@example/gmail": "^1.0.0" }, "skills": { "@example/rewrite-tone": "^1.0.0" } }`
-- **Example (object form)**: `{ "integrations": { "@example/gmail": { "version": "^1.0.0", "scopes": ["gmail.readonly"], "auth_key": "oauth" } } }`
+- **Example**: `{ "integrations": { "@example/gmail": "^1.0.0" }, "skills": { "@example/rewrite-tone": "^1.0.0" } }`
 - **Default**: none
 
 ### 3.2 Agent Manifest
 
-Agent manifests extend the common fields above. A conforming agent manifest MUST include `schema_version`, `display_name`, and `author` (§3.1). Per-integration runtime configuration (such as requested OAuth scopes) is declared inside the dependency entry under `dependencies.integrations` (§4.1) using the object form.
+Agent manifests extend the common fields above. A conforming agent manifest MUST include `schema_version`, `display_name`, and `author` (§3.1). Per-integration runtime configuration (tool selection, requested OAuth scopes, auth-method selection) is declared in the top-level `integrations_configuration` map (§4.4).
 
 #### Required files
 
@@ -640,23 +639,9 @@ A package declares its dependencies using the `dependencies` field. The field co
 
 Each map entry is an AFPS package identity (§2.2) paired with a **dependency value**. Dependency keys MUST be valid scoped names matching the pattern defined in §2.2. All package types MAY declare a top-level `dependencies` field.
 
-A dependency value takes one of two shapes:
+A dependency value MUST be a valid semver range string (e.g. `"^1.0.0"`, `"~2.1"`, `">=3.0.0"`, `"*"`). Each dependency map is a flat record of package identity to version range; it carries no per-dependency configuration.
 
-- **string form**: a valid semver range (e.g. `"^1.0.0"`). Equivalent to the object form `{ "version": "<string>" }`.
-- **object form**: an object whose `version` member MUST be a valid semver range, plus any number of dependency-type-specific OPTIONAL fields documented below.
-
-Consumers MUST accept both forms and normalize the string form to `{ "version": "<string>" }` before processing.
-
-#### Per-dependency-type fields
-
-For `dependencies.integrations.<id>` (object form), AFPS v0.1 defines the following OPTIONAL fields:
-
-- `scopes` (array of strings) — the OAuth scopes the depending package requests from this integration. Consumers compute the effective requested scope set as the union of `scopes` across the package's configured integrations (§7.4).
-- `auth_key` (string) — selects an `auths.<key>` entry when the referenced integration declares more than one auth method. When omitted, consumers select the integration's sole auth method, or apply consumer-defined policy when multiple exist.
-
-For `dependencies.skills.<id>` and `dependencies.mcp_servers.<id>`, AFPS v0.1 defines no extra fields beyond `version`. Producers MAY add fields under `_meta` within the object form (§10).
-
-> **Migration note.** AFPS earlier drafts declared per-integration configuration under a sibling agent-level field `integrations_configuration` (`{ scopes }`). That field is **deprecated** in AFPS 0.1 in favor of the object dependency form above. Consumers MUST keep accepting an agent-level `integrations_configuration` map for backward compatibility and MUST merge it into the dependency entries (a sibling `scopes` always wins over the deprecated map).
+Per-integration agent configuration (tool selection, OAuth scopes, auth-method selection) is declared separately, in the top-level `integrations_configuration` map (§4.4).
 
 The following diagram illustrates how an agent composes its dependencies:
 
@@ -679,17 +664,23 @@ The following diagram illustrates how an agent composes its dependencies:
 
 ### 4.2 Version Range Resolution
 
-A dependency entry's `version` (in the object form, or the entry value itself in the string form) MUST be a valid semver range (e.g., `^1.0.0`, `~2.1`, `>=3.0.0`, `*`). Consumers MUST reject invalid semver range syntax. How consumers resolve ranges against a package catalog is an implementation concern.
+A dependency value MUST be a valid semver range (e.g., `^1.0.0`, `~2.1`, `>=3.0.0`, `*`). Consumers MUST reject invalid semver range syntax. How consumers resolve ranges against a package catalog is an implementation concern.
 
 ### 4.3 Circular Dependencies
 
 A package MUST NOT declare a dependency on itself. Consumers SHOULD detect circular dependencies in the transitive dependency graph and report them with a concrete cycle path.
 
-### 4.4 Integration Configuration (Deprecated)
+### 4.4 Integration Configuration
 
-The sibling `integrations_configuration` map keyed by integration package id is **deprecated** in AFPS 0.1. Per-integration configuration (such as requested OAuth scopes or auth-method selection) is now declared inline inside `dependencies.integrations.<id>` using the object dependency form (§4.1).
+The top-level `integrations_configuration` map, keyed by integration package id, declares per-integration agent configuration. It is an agent-manifest field (§3.2).
 
-Consumers MUST keep accepting the deprecated `integrations_configuration` map for backward compatibility and MUST merge it into the dependency entries at load time. The merge is per-field: any field present in the dependency-entry object form (`scopes`, `auth_key`, etc.) takes precedence over the same field in the deprecated map; fields only present in the deprecated map are carried through as if they had been declared in the dependency entry. The deprecated map is otherwise opaque to consumers.
+Each key MUST be a scoped name (§2.2) that corresponds to an entry in `dependencies.integrations` — `dependencies.integrations` is the canonical declaration that an integration is a dependency, and configuration for an integration not declared there is an error. Each value is an object with the following OPTIONAL fields:
+
+- `tools` (array of strings) — the integration tool names the agent consumes. Consumers use this selection to build the runtime tool allowlist exposed to the agent and to infer the minimum OAuth scope set (the union of the scopes required by the selected tools, §7.4). An absent or empty `tools` array means the agent selected no tools from this integration.
+- `scopes` (array of strings) — explicit OAuth scopes the agent requests from this integration, in addition to any inferred from `tools`. Consumers compute the effective requested scope set as the union across the agent's configured integrations (§7.4).
+- `auth_key` (string) — selects an `auths.<key>` entry when the referenced integration declares more than one auth method. When omitted, consumers select the integration's sole auth method, or apply consumer-defined policy when multiple exist.
+
+Producers MAY add fields under `_meta` within a configuration object (§10).
 
 ## 5. Schema System
 
@@ -830,7 +821,7 @@ A consumer MAY construct an execution context from:
 - `prompt.md`;
 - validated `input` and `config` data;
 - resolved skills, MCP servers, and integrations; and
-- per-integration configuration declared inside the agent's `dependencies.integrations.<id>` entries (§4.1) — `scopes`, `auth_key`, and any future per-dependency fields. Manifests that still carry the deprecated top-level `integrations_configuration` map (§4.4) SHOULD be normalized into the dependency-entry form before construction; consumers MUST accept the deprecated form as a fallback per §4.4.
+- per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools`, `scopes`, and `auth_key`.
 
 AFPS does not define prompt templating, state persistence, scheduling, or transport semantics. Those concerns are out of scope.
 
@@ -838,7 +829,7 @@ AFPS does not define prompt templating, state persistence, scheduling, or transp
 
 `timeout` is a numeric hint expressed in seconds. It communicates the producer's expectation of how long the agent needs to complete.
 
-AFPS v0.1 does not impose a manifest-level default for this field. If a consumer chooses a local default, it SHOULD document it separately from the manifest itself.
+AFPS v0.2 does not impose a manifest-level default for this field. If a consumer chooses a local default, it SHOULD document it separately from the manifest itself.
 
 ## 7. Integration Authentication
 
@@ -920,7 +911,7 @@ OAuth scopes are declared in two AFPS fields, distinct from the non-authoritativ
 #### `default_scopes`
 - **Type**: array of strings
 - **Required**: MAY
-- **Description**: The baseline scope set requested when an agent does not request a narrower or wider set. The effective requested scopes for an agent are computed from the agent's `dependencies.integrations.<id>.scopes` entry (§4.1, object form), defaulting to `default_scopes` when unspecified. The deprecated top-level `integrations_configuration.<id>.scopes` map (§4.4) is accepted as a fallback when no object-form `scopes` is present.
+- **Description**: The baseline scope set requested when an agent does not request a narrower or wider set. The effective requested scopes for an agent are computed from the agent's `integrations_configuration.<id>` entry (§4.4) — the union of scopes inferred from its selected `tools` and any explicit `scopes` — defaulting to `default_scopes` when unspecified.
 
 #### `scope_catalog`
 - **Type**: array of objects
@@ -1186,7 +1177,7 @@ OAuth discovery (§7.3) and credential schemas (§7.5) involve fetching or resol
 AFPS packages may process personally identifiable information (PII) through agent inputs, integration connections, and execution outputs:
 
 - consumers SHOULD document which data is transmitted to external services during agent execution;
-- consumers SHOULD provide users with visibility into what data an agent accesses via its `dependencies` declarations (including per-integration `scopes` in the object form per §4.1, or the deprecated `integrations_configuration` map per §4.4);
+- consumers SHOULD provide users with visibility into what data an agent accesses via its `dependencies` declarations and per-integration `scopes` in `integrations_configuration` (§4.4);
 - consumers SHOULD ensure that execution state, credentials, and intermediate data are appropriately managed according to data protection requirements;
 - registries SHOULD NOT require or store PII in package manifests beyond the `author` field.
 
@@ -1205,7 +1196,7 @@ AFPS adopts the Model Context Protocol `_meta` key convention as its single exte
   "name": "@example/my-agent",
   "version": "1.0.0",
   "type": "agent",
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "_meta": {
     "dev.afps/policy": { "tier": "high" },
     "com.example/cost-center": { "id": "engineering" }
@@ -1294,14 +1285,15 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `screenshots` | all manifests | string[] | MAY | image paths/URIs | none |
 | `privacy_policies` | all manifests | string[] | MAY | privacy-policy URIs | none |
 | `compatibility` | all manifests | object | MAY | `{ platforms?, runtimes?, clients? }` | none |
-| `schema_version` | all manifests | string | MUST for agent; MAY for skill, mcp-server, integration | `MAJOR.MINOR`; producers MUST emit `0.1` | none |
+| `schema_version` | all manifests | string | MUST for agent; MAY for skill, mcp-server, integration | `MAJOR.MINOR`; producers MUST emit `0.2` | none |
 | `dependencies` | all manifests | object | MAY | optional dependency maps (§4.1) | none |
-| `dependencies.skills` | all manifests | map | MAY | keys scoped names; values semver range string or `{ version, ... }` (§4.1) | none |
-| `dependencies.mcp_servers` | all manifests | map | MAY | keys scoped names; values semver range string or `{ version, ... }` (§4.1) | none |
-| `dependencies.integrations` | all manifests | map | MAY | keys scoped names; values semver range string or `{ version, scopes?, auth_key? }` (§4.1) | none |
-| `dependencies.integrations.<id>.scopes` | all manifests | string[] | MAY | requested OAuth scopes for the integration (§7.4) | none |
-| `dependencies.integrations.<id>.auth_key` | all manifests | string | MAY | selects an `auths.<key>` entry on the integration | none |
-| `integrations_configuration` | agent | map | MAY (deprecated) | superseded by `dependencies.integrations.<id>` object form (§4.4); kept for backward compatibility | none |
+| `dependencies.skills` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
+| `dependencies.mcp_servers` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
+| `dependencies.integrations` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
+| `integrations_configuration` | agent | map | MAY | per-integration config keyed by declared integration id (§4.4) | none |
+| `integrations_configuration.<id>.tools` | agent | string[] | MAY | integration tool names the agent consumes (§4.4, §7.4) | none |
+| `integrations_configuration.<id>.scopes` | agent | string[] | MAY | requested OAuth scopes for the integration (§7.4) | none |
+| `integrations_configuration.<id>.auth_key` | agent | string | MAY | selects an `auths.<key>` entry on the integration | none |
 | `input` | agent | object | MAY | per-run data; requires `schema` child | none |
 | `input.schema` | agent | object | MUST if `input` present | AFPS schema object | none |
 | `output` | agent | object | MAY | per-run result; requires `schema` child | none |
@@ -1406,7 +1398,7 @@ Semantic-version and range validation are delegated to semver parsing functions 
 
 ### Appendix C. Default Values
 
-AFPS v0.1 validation does not inject manifest defaults. Omitted optional fields remain omitted.
+AFPS v0.2 validation does not inject manifest defaults. Omitted optional fields remain omitted.
 
 Common consumer-side defaults observed in interoperable implementations include:
 
@@ -1417,7 +1409,7 @@ Common consumer-side defaults observed in interoperable implementations include:
 | `auths.<key>.delivery.files.<path>.mode` | `0400` | octal string |
 | `auths.<key>.connect.login.success_criteria` | HTTP 2xx | when omitted |
 | `manifest_version` | `0.3` | mcp-server MCPB baseline |
-| `schema_version` | `0.1` | common consumer default for new agents/integrations |
+| `schema_version` | `0.2` | common consumer default for new agents/integrations |
 | `timeout` | `300` | common consumer default for new agents |
 
 These defaults are non-normative unless a producer explicitly writes them into the manifest.

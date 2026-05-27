@@ -36,7 +36,7 @@ Agent Skills (Anthropic / AAIF) and MCP servers define capabilities. AFPS define
 
 An agent's `prompt.md` replaces what a human would type to give an agent its objective. The agent manifest declares which skills, MCP servers, and integrations the agent needs to fulfill that objective. AFPS packages everything together into a versioned, distributable `.afps` artifact (a standard ZIP file).
 
-MCP standardizes how an agent invokes tools at runtime. A2A standardizes how agents discover and communicate with each other. Agent Skills standardize reusable capability descriptions. MCPB standardizes how a local MCP server is packaged — and an AFPS `mcp-server` manifest adopts the MCPB field vocabulary (`server`, `tools`, `user_config`, `manifest_version`) at the root alongside AFPS-native fields. The full AFPS manifest is *not* a strict MCPB manifest and is not promised to install in an MCPB host as-is in 0.1; a publish-time projection to a strict MCPB bundle is reserved for a future minor. AFPS standardizes the goal and its dependencies — the package that gets published, installed, and composed before any of that happens. They are complementary.
+MCP standardizes how an agent invokes tools at runtime. A2A standardizes how agents discover and communicate with each other. Agent Skills standardize reusable capability descriptions. MCPB standardizes how a local MCP server is packaged — and an AFPS `mcp-server` manifest adopts the MCPB field vocabulary (`server`, `tools`, `user_config`, `manifest_version`) at the root alongside AFPS-native fields. The full AFPS manifest is *not* a strict MCPB manifest and is not promised to install in an MCPB host as-is in 0.2; a publish-time projection to a strict MCPB bundle is reserved for a future minor. AFPS standardizes the goal and its dependencies — the package that gets published, installed, and composed before any of that happens. They are complementary.
 
 AFPS is transport-agnostic: it does not prescribe how packages are fetched, transferred, or cached.
 
@@ -59,7 +59,7 @@ Think of it like a `docker-compose.yml` for AI agents — it declares the goal, 
   "name": "@acme/customer-intake",
   "version": "1.0.0",
   "type": "agent",
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "display_name": "Customer Intake",
   "author": "Acme Corp",
   "dependencies": {
@@ -140,7 +140,7 @@ An AFPS `mcp-server` manifest is AFPS-native at the root (scoped `name`, `type`,
   "name": "@acme/fetch-json",
   "version": "1.0.0",
   "type": "mcp-server",
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "manifest_version": "0.3",
   "display_name": "Fetch JSON",
   "description": "Fetch JSON from a URL and return the parsed response.",
@@ -175,7 +175,7 @@ An integration is a credentialed binding to an external service — it describes
   "name": "@acme/openai",
   "version": "1.0.0",
   "type": "integration",
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "display_name": "OpenAI",
   "source": { "kind": "none" },
   "auths": {
@@ -257,7 +257,8 @@ An agent composes skills, MCP servers, and integrations as dependencies. The dia
   ║  @acme/customer-intake (agent)                                          ║
   ║    dependencies.skills["@acme/rewrite-tone"]      = "^1.0.0"            ║
   ║    dependencies.mcp_servers["@acme/fetch-json"]   = "^1.0.0"            ║
-  ║    dependencies.integrations["@acme/gmail"]       = { version: "^1.0.0",║
+  ║    dependencies.integrations["@acme/gmail"]       = "^1.0.0"            ║
+  ║    integrations_configuration["@acme/gmail"]      = { tools: […],       ║
   ║                                                       scopes:  […],      ║
   ║                                                       auth_key:"oauth" } ║
   ╠═════════════════════════════════════════════════════════════════════════╣
@@ -269,31 +270,32 @@ An agent composes skills, MCP servers, and integrations as dependencies. The dia
   ║      └─ source.kind:"local" → gmail-server@2.1.0 (mcp-server)           ║
   ║                          ▲                                               ║
   ║                          │ OAuth2 token injected via delivery.http      ║
-  ║                          │ (scopes from the agent dependency entry)      ║
+  ║                          │ (scopes from integrations_configuration)       ║
   ╚═════════════════════════════════════════════════════════════════════════╝
 ```
 
 The agent says *what to accomplish*. The dependencies provide *how* — reusable capabilities and service connections the agent draws on at runtime. A *credentialed* MCP server (Gmail) is wrapped by an integration whose `source.kind: "local"` points at it; the runtime applies the auth layer on top. A *utility* MCP server (fetch-json) needs no credentials and is a freestanding dependency.
 
-All package types use a single `dependencies` field, grouped into three maps (`skills`, `mcp_servers`, `integrations`). Each entry is either a semver-range string or, for integrations, an object carrying the range plus per-dependency configuration (`scopes`, `auth_key`). A registry resolves and installs these packages when the parent package is published or imported; a runtime loads them when the agent executes.
+All package types use a single `dependencies` field, grouped into three maps (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to a semver range. Per-integration configuration (`tools`, `scopes`, `auth_key`) lives in the agent's separate top-level `integrations_configuration` map, keyed by the same integration id. A registry resolves and installs these packages when the parent package is published or imported; a runtime loads them when the agent executes.
 
 ```json
 {
   "dependencies": {
     "skills": { "@acme/rewrite-tone": "^1.0.0" },
     "mcp_servers": { "@acme/fetch-json": "^1.0.0" },
-    "integrations": {
-      "@acme/gmail": {
-        "version": "^1.0.0",
-        "scopes": ["gmail.readonly"],
-        "auth_key": "oauth"
-      }
+    "integrations": { "@acme/gmail": "^1.0.0" }
+  },
+  "integrations_configuration": {
+    "@acme/gmail": {
+      "tools": ["list_messages"],
+      "scopes": ["gmail.readonly"],
+      "auth_key": "oauth"
     }
   }
 }
 ```
 
-The `dependencies` object is grouped by package type (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to either a semver range (compact form) or an object with a `version` range plus optional configuration (object form).
+The `dependencies` object is grouped by package type (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to a semver range. Per-integration agent configuration is declared separately in `integrations_configuration`.
 
 See [spec.md, Section 4.1](./spec.md#41-dependency-declaration).
 
@@ -373,7 +375,7 @@ AFPS manifests are extensible. Unknown fields are preserved by consumers rather 
 {
   "name": "@acme/my-agent",
   "type": "agent",
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "_meta": {
     "dev.afps/policy": { "tier": "high" },
     "dev.acme/cost-center": { "code": "eng-42" }
@@ -405,7 +407,7 @@ AFPS is a packaging standard. It defines the artifact — the ZIP file, the mani
 
 ## Further reading
 
-- [Full specification](./spec.md) — the normative AFPS v0.1 draft
+- [Full specification](./spec.md) — the normative AFPS v0.2 draft
 - [Governance](./GOVERNANCE.md) — how the specification evolves
 - [Changelog](./CHANGELOG.md) — specification history
 

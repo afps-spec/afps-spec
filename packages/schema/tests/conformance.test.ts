@@ -373,14 +373,24 @@ describe("agent manifest (§3.2)", () => {
     expectInvalid(agentManifestSchema, { ...base, timeout: -1 });
   });
 
-  test("integrations_configuration keyed by scoped id", () => {
+  test("integrations_configuration keyed by declared integration id (§4.4)", () => {
     expectValid(agentManifestSchema, {
       ...base,
-      integrations_configuration: { "@acme/gmail": { scopes: ["a", "b"] } },
+      dependencies: { integrations: { "@acme/gmail": "^1.0.0" } },
+      integrations_configuration: {
+        "@acme/gmail": { tools: ["list_messages"], scopes: ["a", "b"], auth_key: "oauth" },
+      },
     });
+    // Key must be a scoped name.
     expectInvalid(agentManifestSchema, {
       ...base,
       integrations_configuration: { "bad-name": { scopes: [] } },
+    });
+    // Key without a matching dependencies.integrations entry is rejected.
+    expectInvalid(agentManifestSchema, {
+      ...base,
+      dependencies: { integrations: { "@acme/other": "^1.0.0" } },
+      integrations_configuration: { "@acme/gmail": { tools: ["list_messages"] } },
     });
   });
 });

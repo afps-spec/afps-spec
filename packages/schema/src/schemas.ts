@@ -2,9 +2,9 @@
 // Copyright (c) 2026 AFPS contributors
 
 /**
- * AFPS 0.1 — Zod schemas for the four package types.
+ * AFPS 0.2 — Zod schemas for the four package types.
  *
- * AFPS 0.1 uses a snake_case field vocabulary and defines four package types:
+ * AFPS 0.2 uses a snake_case field vocabulary and defines four package types:
  *   - agent       (§3.2)
  *   - skill        (§3.3)
  *   - mcp-server   (§3.4) — AFPS-native at root, adopts MCPB vocabulary for server/tools/user_config
@@ -42,7 +42,7 @@ export const scopedName = z.string().regex(SCOPED_NAME_REGEX, {
   error: "Must follow @scope/name format",
 });
 
-/** The four AFPS 0.1 package types (§2.1). `tool` and `provider` are removed. */
+/** The four AFPS 0.2 package types (§2.1). `tool` and `provider` are removed. */
 export const packageTypeEnum = z.enum(["agent", "skill", "mcp-server", "integration"]);
 
 const semverVersion = z.string().refine((v) => semver.valid(v) !== null, {
@@ -160,53 +160,67 @@ export const schemaWrapper = z.object({
 // ─────────────────────────────────────────────
 
 /**
- * Generic dependency entry: a semver range string, or an object whose `version`
- * member is a semver range. Object form is the carrier for per-dependency-type
- * configuration (e.g. `scopes`/`auth_key` for integrations).
+ * A dependency entry: a semver range string (§4.1). Every value in the
+ * `dependencies.{skills,mcp_servers,integrations}` maps is a bare semver
+ * range — the maps declare *which* packages and at *what* versions, nothing
+ * more. Per-integration agent configuration (`tools`/`scopes`/`auth_key`)
+ * lives in the top-level `integrations_configuration` block (§4.4).
  */
-export const baseDependencyObject = z.looseObject({
-  version: semverRange,
-});
-
-export const dependencyValue = z.union([semverRange, baseDependencyObject]);
-
-/** Dependency entry for `dependencies.integrations.<id>` (§4.1). */
-export const integrationDependencyObject = z.looseObject({
-  version: semverRange,
-  scopes: z.array(z.string()).optional(),
-  auth_key: z
-    .string()
-    .regex(AUTH_KEY_REGEX, { error: "auth_key must match ^[a-z][a-z0-9_]*$" })
-    .optional(),
-});
-
-export const integrationDependencyValue = z.union([semverRange, integrationDependencyObject]);
-
 export const dependenciesSchema = z
   .looseObject({
-    skills: z.record(scopedName, dependencyValue).optional(),
-    mcp_servers: z.record(scopedName, dependencyValue).optional(),
-    integrations: z.record(scopedName, integrationDependencyValue).optional(),
+    skills: z.record(scopedName, semverRange).optional(),
+    mcp_servers: z.record(scopedName, semverRange).optional(),
+    integrations: z.record(scopedName, semverRange).optional(),
   })
   .optional();
 
 // ─────────────────────────────────────────────
-// Agent integrations_configuration (§4.4 — deprecated)
+// Agent integrations_configuration (§4.4)
 // ─────────────────────────────────────────────
 
 /**
- * Deprecated in AFPS 0.1 (§4.4). Per-integration configuration now lives inline
- * inside `dependencies.integrations.<id>` (object form). Consumers MUST keep
- * accepting this field; values are merged into dependency entries with the
- * dependency entry winning on conflict.
+ * Per-integration agent configuration, keyed by the integration dependency id
+ * (§4.4). Each key MUST correspond to an entry in `dependencies.integrations`
+ * (enforced on the agent manifest). Carries the tool selection driving the
+ * runtime allowlist, the OAuth scope selection, and the `auth_key`
+ * disambiguator for multi-auth integrations.
  */
-export const integrationConfiguration = z.looseObject({
+export const integrationConfigurationObject = z.looseObject({
+  tools: z.array(z.string()).optional(),
   scopes: z.array(z.string()).optional(),
   auth_key: z
     .string()
     .regex(AUTH_KEY_REGEX, { error: "auth_key must match ^[a-z][a-z0-9_]*$" })
     .optional(),
 });
+
+/**
+ * §4.4 cross-field rule: every `integrations_configuration` key MUST be a
+ * declared integration dependency. `dependencies.integrations` is the
+ * canonical gate; configuration for an undeclared integration is an error.
+ *
+ * Exported so consumers that extend the agent manifest schema (and therefore
+ * cannot keep the AFPS-level refinement on a plain object) can re-apply the
+ * exact same rule in their own refinement.
+ */
+export function refineIntegrationsConfiguration(
+  val: { dependencies?: unknown; integrations_configuration?: unknown },
+  ctx: z.RefinementCtx,
+): void {
+  const config = val.integrations_configuration as Record<string, unknown> | undefined;
+  if (!config) return;
+  const deps = (val.dependencies as { integrations?: Record<string, unknown> } | undefined)
+    ?.integrations;
+  for (const id of Object.keys(config)) {
+    if (!deps || !(id in deps)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["integrations_configuration", id],
+        message: `integrations_configuration["${id}"] has no matching dependencies.integrations["${id}"] entry`,
+      });
+    }
+  }
+}
 
 // ─────────────────────────────────────────────
 // MCP-server: MCPB-vocabulary shapes (§3.4)
@@ -661,19 +675,26 @@ export function createSchemas(majorVersion: number) {
   };
 
   // ── Agent (§3.2) ──
-  const agentManifestSchema = z.looseObject({
+  // The plain object schema stays extendable by consumers (`.extend`); the
+  // §4.4 cross-field rule is layered on top for the default export and
+  // re-applied by extenders via `refineIntegrationsConfiguration`.
+  const agentManifestObjectSchema = z.looseObject({
     ...commonFields,
     type: z.literal("agent"),
     schema_version: schemaVersionField,
     display_name: z.string().min(1),
     author: authorField, // REQUIRED for agent
-    // Deprecated in AFPS 0.1 (§4.4); kept for backward compatibility.
-    integrations_configuration: z.record(scopedName, integrationConfiguration).optional(),
+    // Per-integration configuration, keyed by integration dependency id (§4.4).
+    integrations_configuration: z.record(scopedName, integrationConfigurationObject).optional(),
     input: schemaWrapper.optional(),
     output: schemaWrapper.optional(),
     config: schemaWrapper.optional(),
     timeout: z.number().positive().optional(),
   });
+
+  const agentManifestSchema = agentManifestObjectSchema.superRefine(
+    refineIntegrationsConfiguration,
+  );
 
   // ── Skill (§3.3) ──
   const skillManifestSchema = z.looseObject({
@@ -749,6 +770,7 @@ export function createSchemas(majorVersion: number) {
 
   return {
     agentManifestSchema,
+    agentManifestObjectSchema,
     skillManifestSchema,
     mcpServerManifestSchema,
     integrationManifestSchema,
@@ -762,6 +784,7 @@ export function createSchemas(majorVersion: number) {
 const draft = createSchemas(0);
 
 export const agentManifestSchema = draft.agentManifestSchema;
+export const agentManifestObjectSchema = draft.agentManifestObjectSchema;
 export const skillManifestSchema = draft.skillManifestSchema;
 export const mcpServerManifestSchema = draft.mcpServerManifestSchema;
 export const integrationManifestSchema = draft.integrationManifestSchema;
