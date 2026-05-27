@@ -259,18 +259,6 @@ const mcpServerToolEntry = z.looseObject({
 /** MCP transport for a remote integration source (§7.1). */
 export const transportEnum = z.enum(["streamable-http", "sse"]);
 
-/**
- * Reserved resumable upload protocols an `api` source MAY declare (§7.1). AFPS
- * AFPS reserves these values for interoperability; producers MAY emit other
- * (reverse-DNS-qualified) values and consumers MUST tolerate them.
- */
-export const RESERVED_UPLOAD_PROTOCOLS = [
-  "google-resumable",
-  "s3-multipart",
-  "tus",
-  "ms-resumable",
-] as const;
-
 const localSource = z.looseObject({
   kind: z.literal("local"),
   server: z.looseObject({
@@ -288,22 +276,20 @@ const remoteSource = z.looseObject({
   }),
 });
 
-const apiSource = z.looseObject({
-  kind: z.literal("api"),
-  api: z.looseObject({
-    upload_protocols: z
-      .array(z.string().min(1))
-      .refine((arr) => new Set(arr).size === arr.length, {
-        error: "upload_protocols must contain unique values",
-      })
-      .optional(),
-  }),
+/**
+ * A source with no MCP backing (§7.1). The integration exposes no MCP-tool
+ * catalog of its own; any capabilities it offers come from vendor `_meta`
+ * extensions (e.g. a credential-injecting HTTP proxy). Carries no further
+ * spec-defined fields — the `kind` discriminant is the whole contract.
+ */
+const noneSource = z.looseObject({
+  kind: z.literal("none"),
 });
 
 export const integrationSource = z.discriminatedUnion("kind", [
   localSource,
   remoteSource,
-  apiSource,
+  noneSource,
 ]);
 
 // ─────────────────────────────────────────────

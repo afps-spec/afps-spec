@@ -8,8 +8,7 @@
   "description": "HTTP Basic authentication for an internal REST API.",
   "keywords": ["internal", "api"],
   "source": {
-    "kind": "api",
-    "api": {}
+    "kind": "none"
   },
   "auths": {
     "basic": {

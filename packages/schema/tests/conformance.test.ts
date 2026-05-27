@@ -126,7 +126,7 @@ const validIntegrationApiKey = {
   type: "integration",
   schema_version: "0.1",
   display_name: "Zendesk",
-  source: { kind: "api", api: { upload_protocols: ["tus"] } },
+  source: { kind: "none" },
   auths: {
     token: {
       type: "api_key",
@@ -692,25 +692,16 @@ describe("integration source (§7.1)", () => {
     });
   });
 
-  test("api source: upload_protocols open array + uniqueness", () => {
+  test("none source: bare kind, no further fields (§7.1)", () => {
     expectValid(integrationManifestSchema, validIntegrationApiKey);
     expectValid(integrationManifestSchema, {
       ...validIntegrationApiKey,
-      source: { kind: "api", api: {} },
+      source: { kind: "none" },
     });
-    expectValid(integrationManifestSchema, {
-      ...validIntegrationApiKey,
-      source: { kind: "api", api: { upload_protocols: ["s3-multipart", "tus", "ms-resumable"] } },
-    });
-    // Open string array (§7.1): unknown values are accepted; producers SHOULD
-    // use a reverse-DNS qualifier for non-standard protocols.
-    expectValid(integrationManifestSchema, {
-      ...validIntegrationApiKey,
-      source: { kind: "api", api: { upload_protocols: ["com.example/proprietary-resumable"] } },
-    });
+    // The former `api` source kind was removed; it is no longer valid.
     expectInvalid(integrationManifestSchema, {
       ...validIntegrationApiKey,
-      source: { kind: "api", api: { upload_protocols: ["tus", "tus"] } },
+      source: { kind: "api", api: {} },
     });
   });
 
@@ -739,7 +730,7 @@ describe("integration auth methods (§7.2 – §7.5)", () => {
     type: "integration",
     schema_version: "0.1",
     display_name: "Test",
-    source: { kind: "api", api: {} },
+    source: { kind: "none" },
   };
 
   function withAuth(auths: Record<string, unknown>) {
@@ -936,7 +927,7 @@ describe("credential delivery (§7.6)", () => {
     type: "integration",
     schema_version: "0.1",
     display_name: "Test",
-    source: { kind: "api", api: {} },
+    source: { kind: "none" },
   };
 
   function apiKeyAuth(delivery: unknown) {
@@ -1023,7 +1014,7 @@ describe("connect (§7.7)", () => {
     type: "integration",
     schema_version: "0.1",
     display_name: "Test",
-    source: { kind: "api", api: {} },
+    source: { kind: "none" },
   };
 
   const credsSchema = { type: "object", properties: { username: { type: "string" } } };
