@@ -1051,16 +1051,12 @@ When `integration.tools_policy.<name>` is declared, it **augments** the canonica
 ```jsonc
 "tools_policy": {
   "list_issues": {
-    "required_scopes": ["repo"],
-    "required_auth_key": "oauth",
-    "url_patterns": [ { "pattern": "https://api.github.com/**", "methods": ["GET"] } ]
+    "required_scopes": { "oauth": ["repo"] }
   }
 }
 ```
 
-- `required_scopes` (array of strings) — scopes a tool requires; contributes to the agent-install scope union (§7.4).
-- `required_auth_key` (string) — selects which `auths` entry a tool uses when the integration declares more than one.
-- `url_patterns` (array) — defence-in-depth allowlist of `{ pattern, methods? }`, where `pattern` is a glob (`*` single segment, `**` multi-segment) and `methods` is an OPTIONAL list of HTTP methods.
+- `required_scopes` (object — `{ <auth_key>: string[] }`) — per-auth scopes a tool requires; contributes to the agent-install scope union (§7.4). Each key MUST be a declared `auths` entry and its scopes MUST be ⊆ that auth's `scope_catalog`. Keying by auth binds the scopes to the IdP they're requested against — a tool MAY declare scopes under multiple auths. An auth absent from the map serves the tool with no scope requirement (e.g. a `pat` alongside a scoped `oauth`); the map is for OAuth consent inference, NOT an exclusivity lock — any connected auth may serve the tool at runtime.
 
 #### `hidden_tools`
 
@@ -1362,9 +1358,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.authorized_uris` | integration | string[] | MAY | allowed upstream URI patterns (glob) | none |
 | `auths.<key>.allow_all_uris` | integration | boolean | MAY | unrestricted upstream access | `false` |
 | `tools_policy` | integration | object | MAY | sparse per-tool policy table (augments canonical tool catalog of the referenced source); keys MUST resolve in the canonical catalog | none |
-| `tools_policy.<name>.required_scopes` | integration | string[] | MAY | scopes a tool requires | none |
-| `tools_policy.<name>.required_auth_key` | integration | string | MAY | selects an `auths` entry | none |
-| `tools_policy.<name>.url_patterns` | integration | object[] | MAY | `{ pattern (glob), methods? }` | none |
+| `tools_policy.<name>.required_scopes` | integration | object `{ <auth_key>: string[] }` | MAY | per-auth scopes a tool requires; each key a declared `auths` entry, scopes ⊆ that auth's `scope_catalog` (consent inference, not an exclusivity lock) | none |
 | `hidden_tools` | integration | string[] | MAY | tool names suppressed from the agent's surface; tools used as `connect.tool` are auto-hidden | none |
 | `setup_guide` | integration | object | MAY | setup metadata | none |
 | `setup_guide.callback_url_hint` | integration | string | MAY (deprecated) | superseded by `auths.<key>.callback_url_hint`; kept for backward compatibility | none |

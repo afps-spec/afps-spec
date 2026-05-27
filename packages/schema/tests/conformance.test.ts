@@ -1179,9 +1179,7 @@ describe("integration tools/uris/setup_guide (§7.8 – §7.10)", () => {
       },
       tools_policy: {
         list_issues: {
-          required_scopes: ["repo"],
-          required_auth_key: "oauth",
-          url_patterns: [{ pattern: "https://api.github.com/**", methods: ["GET"] }],
+          required_scopes: { oauth: ["repo"] },
         },
       },
       icon: "icon.png",

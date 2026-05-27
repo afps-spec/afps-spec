@@ -498,18 +498,12 @@ export const authMethod = z.looseObject({
 });
 
 // --- Per-tool metadata (§7.8) ---
-const toolUrlPattern = z.looseObject({
-  pattern: z.string().min(1),
-  methods: z.array(z.string()).optional(),
-});
-
+// `required_scopes` is keyed by auth key: each entry binds the scopes a tool
+// needs to one declared `auths` entry (for OAuth consent inference). A tool may
+// list scopes under multiple auths; an auth absent from the map serves the tool
+// with no scope requirement (e.g. a `pat` alongside a scoped `oauth`).
 const integrationToolMeta = z.looseObject({
-  required_scopes: z.array(z.string()).optional(),
-  required_auth_key: z
-    .string()
-    .regex(AUTH_KEY_REGEX, { error: "required_auth_key must match ^[a-z][a-z0-9_]*$" })
-    .optional(),
-  url_patterns: z.array(toolUrlPattern).optional(),
+  required_scopes: z.record(z.string().regex(AUTH_KEY_REGEX), z.array(z.string())).optional(),
 });
 
 // --- Setup guide (§7.10) ---
@@ -738,7 +732,7 @@ export function createSchemas(majorVersion: number) {
       source: integrationSource,
       auths: z.record(z.string().regex(AUTH_KEY_REGEX), authMethod),
       // `tools_policy` is a SPARSE POLICY TABLE keyed by tool name — it
-      // carries `required_scopes` / `required_auth_key` / `url_patterns`
+      // carries `required_scopes` (keyed by auth key)
       // per tool that needs them. It is NOT the catalog of "tools this
       // integration exposes": the catalog comes from the referenced
       // mcp-server's `tools[]` (local source) or the integration's
