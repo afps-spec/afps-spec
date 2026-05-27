@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schemas.afps.dev/v0/mcp-server.schema.json",
+  "name": "@example/fetch-json",
+  "version": "1.0.0",
+  "type": "mcp-server",
+  "schema_version": "0.1",
+  "manifest_version": "0.3",
+  "display_name": "Fetch JSON",
+  "description": "Fetch JSON from a URL and return the parsed response.",
+  "author": "AFPS Examples",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["server/index.js"]
+    }
+  },
+  "tools": [
+    {
+      "name": "fetch_json",
+      "description": "Fetch JSON from a URL and return the parsed response."
+    }
+  ]
+}

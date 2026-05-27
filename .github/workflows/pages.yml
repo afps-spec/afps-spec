@@ -1,0 +1,54 @@
+name: Deploy schemas to GitHub Pages
+
+# Publishes the generated JSON Schemas to https://schemas.afps.dev/v0/*.schema.json
+# so that the manifests' `$schema` / `$id` URLs resolve. The documentation site
+# (Fumadocs) is hosted separately on the apex afps.dev.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/schema/v0/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Assemble Pages site (schemas at /v0/)
+        run: |
+          set -e
+          mkdir -p _site/v0
+          cp packages/schema/v0/*.schema.json _site/v0/
+          echo "schemas.afps.dev" > _site/CNAME
+          # Minimal landing page pointing at the docs site.
+          cat > _site/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8">
+          <title>AFPS JSON Schemas</title>
+          <p>AFPS JSON Schemas are served under <code>/v0/</code>.
+          Documentation: <a href="https://afps.dev">afps.dev</a>.</p>
+          HTML
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

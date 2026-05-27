@@ -1,0 +1,118 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-schemas:
+    name: Validate JSON Schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate schema syntax
+        run: |
+          set -e
+          shopt -s nullglob
+          files=(packages/schema/v0/*.schema.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "FAIL: no schemas found in packages/schema/v0/"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "Validating $f..."
+            python3 -c "import json; json.load(open('$f'))" || exit 1
+          done
+          echo "All schemas are valid JSON."
+
+  validate-examples:
+    name: Validate Examples Against Schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 20
+
+      - name: Install ajv-cli
+        run: npm install -g ajv-cli ajv-formats
+
+      - name: Validate example manifests
+        run: |
+          set -e
+          for dir in examples/*/; do
+            manifest="$dir/manifest.json"
+            if [ ! -f "$manifest" ]; then
+              echo "SKIP: $dir (no manifest.json)"
+              continue
+            fi
+
+            # Extract type from manifest to pick the right schema
+            type=$(python3 -c "import json; print(json.load(open('$manifest'))['type'])")
+            schema="packages/schema/v0/${type}.schema.json"
+
+            if [ ! -f "$schema" ]; then
+              echo "FAIL: $manifest references type '$type' but $schema not found"
+              exit 1
+            fi
+
+            echo "Validating $manifest against $schema..."
+            ajv validate -s "$schema" -d "$manifest" --spec=draft2020 || exit 1
+          done
+          echo "All examples are valid."
+
+  markdown-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23.2.0
+        with:
+          globs: "*.md"
+
+  link-check:
+    name: Check Internal Links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check spec.md anchor links
+        run: |
+          set -e
+          errors=0
+
+          # Extract all internal links from ToC and body
+          links=$(grep -oP '\(#[^)]+\)' spec.md | tr -d '()' | sort -u)
+
+          for link in $links; do
+            anchor="${link#\#}"
+            # GitHub-style anchor: lowercase, spaces to hyphens, strip punctuation
+            # Check if a heading exists that would produce this anchor
+            if ! grep -qiP "^#{1,6}\s+.*" spec.md | \
+                 sed 's/^#\+\s\+//' | \
+                 sed 's/[^a-zA-Z0-9 -]//g' | \
+                 sed 's/ /-/g' | \
+                 tr '[:upper:]' '[:lower:]' | \
+                 grep -qF "$anchor"; then
+              # Fallback: just check the anchor text appears as a heading slug
+              heading_pattern=$(echo "$anchor" | sed 's/-/[ -]/g')
+              if ! grep -qiP "^#{1,6}\s+.*${heading_pattern}" spec.md; then
+                echo "WARN: Anchor $link may be broken"
+                errors=$((errors + 1))
+              fi
+            fi
+          done
+
+          if [ $errors -gt 0 ]; then
+            echo "$errors potential broken anchor(s) found (warnings only)"
+          else
+            echo "All internal links look valid."
+          fi
