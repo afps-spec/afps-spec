@@ -497,8 +497,7 @@ export const authMethod = z.looseObject({
   delivery: deliverySchema,
   // URI restrictions (§7.9)
   ...uriRestrictionFields,
-  // OAuth-client registration hint (§7.10). Auth-method-scoped to replace the
-  // deprecated `setup_guide.callback_url_hint`.
+  // OAuth-client registration hint (§7.10). Auth-method-scoped.
   callback_url_hint: z.string().optional(),
 });
 
@@ -513,7 +512,6 @@ const integrationToolMeta = z.looseObject({
 
 // --- Setup guide (§7.10) ---
 export const setupGuide = z.looseObject({
-  callback_url_hint: z.string().optional(),
   steps: z
     .array(
       z.looseObject({

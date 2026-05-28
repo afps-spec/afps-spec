@@ -5,8 +5,7 @@
  * 1. Valid 0.1 manifests (agent/skill/mcp-server/integration) pass.
  * 2. Invalid manifests are correctly rejected.
  * 3. Spec constraints (§2–§7, §10) are enforced.
- * 4. Legacy 1.x types (tool/provider) and camelCase fields are rejected /
- *    not treated as standard.
+ * 4. camelCase fields are rejected / not treated as standard.
  */
 
 import { describe, test, expect } from "bun:test";
@@ -163,24 +162,6 @@ describe("package types (§2.1)", () => {
       expect(packageTypeEnum.safeParse(t).success).toBe(true);
     }
   });
-
-  test("legacy types tool/provider are rejected by packageTypeEnum", () => {
-    expect(packageTypeEnum.safeParse("tool").success).toBe(false);
-    expect(packageTypeEnum.safeParse("provider").success).toBe(false);
-  });
-
-  test("agent schema rejects type: tool and type: provider", () => {
-    expectInvalid(agentManifestSchema, { ...validAgent, type: "tool" });
-    expectInvalid(agentManifestSchema, { ...validAgent, type: "provider" });
-  });
-
-  test("skill schema rejects type: tool", () => {
-    expectInvalid(skillManifestSchema, { ...validSkill, type: "tool" });
-  });
-
-  test("integration schema rejects type: provider", () => {
-    expectInvalid(integrationManifestSchema, { ...validIntegrationOauth2, type: "provider" });
-  });
 });
 
 // ─────────────────────────────────────────────
@@ -272,7 +253,7 @@ describe("common manifest fields (§3.1)", () => {
     });
   });
 
-  test("legacy camelCase fields are NOT standard — they round-trip as extra fields only", () => {
+  test("camelCase fields are NOT standard — they round-trip as extra fields only", () => {
     // displayName (camelCase) is not the standard field, so the standard
     // display_name remains absent; the camelCase key is preserved as an extra.
     const manifest = {
@@ -446,15 +427,6 @@ describe("dependencies (§4)", () => {
     });
   });
 
-  test("legacy 1.x dependency sections are not standard maps", () => {
-    // `tools` / `providers` are not AFPS sections — they round-trip as extras
-    // but their values are NOT validated as semver-range maps.
-    expectValid(agentManifestSchema, {
-      ...base,
-      dependencies: { tools: { "not a scoped name!": "garbage" } },
-    });
-  });
-
   test("dependency keys must be scoped, values valid ranges", () => {
     expectInvalid(agentManifestSchema, {
       ...base,
@@ -523,10 +495,11 @@ describe("schema system (§5)", () => {
     expectInvalid(agentManifestSchema, { ...base, config: {} });
   });
 
-  test("legacy camelCase wrapper keys are not standard metadata", () => {
-    // fileConstraints/uiHints/propertyOrder are 1.x spellings. The schema
-    // wrapper is a strict object, so these unknown keys are stripped — they
-    // are NOT silently accepted as the snake_case standard fields.
+  test("non-canonical camelCase wrapper keys are not standard metadata", () => {
+    // fileConstraints/uiHints/propertyOrder are non-canonical camelCase
+    // spellings. The schema wrapper is a strict object, so these unknown keys
+    // are stripped — they are NOT silently accepted as the snake_case standard
+    // fields.
     const manifest = {
       ...base,
       input: {

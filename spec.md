@@ -609,7 +609,7 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 - **Example**: `{ "oauth": { "type": "oauth2", "issuer": "https://accounts.google.com", "delivery": { "http": { "in": "header", "name": "Authorization", "prefix": "Bearer ", "value": "{$credential.access_token}" } } } }`
 - **Default**: none
 
-> The integration manifest uses the common-fields `icon` / `icons` (§3.1) for presentation; the legacy integration-scoped `icon` field is folded into the common fields and is no longer documented separately here.
+> The integration manifest uses the common-fields `icon` / `icons` (§3.1) for presentation.
 
 > The integration manifest also accepts the tool-surface fields `tools_policy`, `hidden_tools`, and `allow_undeclared_tools` — full descriptions live under §7.8 (Per-Tool Policy) since they are part of the authentication / runtime-surface model rather than the structural envelope.
 
@@ -1093,7 +1093,7 @@ An integration MAY declare a `setup_guide` with human-facing instructions for co
 
 - `setup_guide.steps` (array) — an ordered list of steps; each step MUST have a `label` and MAY have a `url`.
 
-`callback_url_hint` is a property of an OAuth2 auth method (not of the integration as a whole), and is therefore declared under `auths.<key>.callback_url_hint` (string; often containing a placeholder such as `{{callback_url}}`). The top-level `setup_guide.callback_url_hint` from earlier drafts is **deprecated**; consumers MUST keep accepting it for backward compatibility and SHOULD treat it as a fallback when the auth method does not declare one.
+`callback_url_hint` is a property of an OAuth2 auth method (not of the integration as a whole), and is therefore declared under `auths.<key>.callback_url_hint` (string; often containing a placeholder such as `{{callback_url}}`).
 
 ### 7.11 OpenAPI Security Scheme Mapping (Informative)
 
@@ -1376,7 +1376,6 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `hidden_tools` | integration | string[] | MAY | tool names suppressed from the agent's surface; tools used as `connect.tool` are auto-hidden | none |
 | `allow_undeclared_tools` | integration | boolean | MAY | opt-in: when `true`, an agent MAY set `integrations_configuration.<id>.tools = "*"` to pass through every upstream tool (§7.8); requires ≥1 auth with non-empty `default_scopes` | `false` |
 | `setup_guide` | integration | object | MAY | setup metadata | none |
-| `setup_guide.callback_url_hint` | integration | string | MAY (deprecated) | superseded by `auths.<key>.callback_url_hint`; kept for backward compatibility | none |
 | `setup_guide.steps` | integration | object[] | MAY | ordered setup steps | none |
 | `setup_guide.steps[].label` | integration | string | MUST if step present | non-empty recommended | none |
 | `setup_guide.steps[].url` | integration | string | MAY | URI recommended | none |
