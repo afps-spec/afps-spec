@@ -393,6 +393,20 @@ describe("agent manifest (§3.2)", () => {
       integrations_configuration: { "@acme/gmail": { tools: ["list_messages"] } },
     });
   });
+
+  test('integrations_configuration.<id>.tools accepts the wildcard literal "*" (§4.4)', () => {
+    expectValid(agentManifestSchema, {
+      ...base,
+      dependencies: { integrations: { "@acme/gmail": "^1.0.0" } },
+      integrations_configuration: { "@acme/gmail": { tools: "*" } },
+    });
+    // Other string literals are rejected — only "*" is a valid non-array form.
+    expectInvalid(agentManifestSchema, {
+      ...base,
+      dependencies: { integrations: { "@acme/gmail": "^1.0.0" } },
+      integrations_configuration: { "@acme/gmail": { tools: "all" } },
+    });
+  });
 });
 
 // ─────────────────────────────────────────────
@@ -1218,6 +1232,79 @@ describe("integration tools/uris/setup_guide (§7.8 – §7.10)", () => {
     expectInvalid(integrationManifestSchema, {
       ...validIntegrationOauth2,
       setup_guide: { steps: [{ url: "https://e.com" }] },
+    });
+  });
+
+  test("allow_undeclared_tools: true is accepted when an oauth2 auth declares default_scopes", () => {
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      allow_undeclared_tools: true,
+    });
+  });
+
+  test("allow_undeclared_tools: true is rejected when only an oauth2 auth exists and it has empty default_scopes", () => {
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      auths: {
+        oauth: {
+          ...validIntegrationOauth2.auths.oauth,
+          default_scopes: [],
+        },
+      },
+      allow_undeclared_tools: true,
+    });
+  });
+
+  test("allow_undeclared_tools: true is accepted when the (only) auth is non-oauth2 (api_key)", () => {
+    // api_key / basic / custom / mtls have no scope mechanism — the auth is
+    // wildcard-usable wholesale, no `default_scopes` required.
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationApiKey,
+      allow_undeclared_tools: true,
+    });
+  });
+
+  test("allow_undeclared_tools: true accepted on a mixed manifest where the oauth2 has empty default_scopes but a pat is present", () => {
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      auths: {
+        oauth: {
+          ...validIntegrationOauth2.auths.oauth,
+          default_scopes: [],
+        },
+        pat: {
+          type: "api_key",
+          credentials: {
+            schema: { type: "object", properties: { token: { type: "string" } } },
+          },
+          authorized_uris: ["https://api.example.com/**"],
+          delivery: {
+            http: {
+              in: "header",
+              name: "Authorization",
+              prefix: "Bearer ",
+              value: "{$credential.token}",
+            },
+          },
+        },
+      },
+      allow_undeclared_tools: true,
+    });
+  });
+
+  test("allow_undeclared_tools: false (or absent) is always accepted", () => {
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      allow_undeclared_tools: false,
+    });
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      auths: {
+        oauth: {
+          ...validIntegrationOauth2.auths.oauth,
+          default_scopes: [],
+        },
+      },
     });
   });
 });

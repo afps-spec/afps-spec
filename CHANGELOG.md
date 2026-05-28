@@ -1,5 +1,26 @@
 # Changelog
 
+## Schema `@afps-spec/schema@0.5.0` — 2026-05-28
+
+Additive schema change.
+
+- `integration.allow_undeclared_tools: boolean` (default `false`) — opt-in author
+  flag. When `true`, an agent MAY set `integrations_configuration.<id>.tools = "*"`
+  to bypass the per-tool allowlist and pass through every tool the upstream MCP
+  server advertises at runtime. Requires at least one **wildcard-usable** auth:
+  either a non-`oauth2` auth (`api_key`/`basic`/`custom`/`mtls` — no scope
+  mechanism, the wholesale grant covers any tool) or an `oauth2` auth with a
+  non-empty `default_scopes` (the fallback scope set when an agent picks that
+  auth under wildcard). The Zod schema enforces this cross-field rule via
+  `superRefine`; the generated JSON Schema declares the property but does not
+  encode the correlation (JSON Schema `if`/`then` over a variadic auth map is
+  impractical), so consumers that validate via JSON Schema alone MUST
+  re-implement that check.
+- `integrations_configuration.<id>.tools` widened from `string[]` to
+  `string[] | "*"`. The wildcard literal opts the agent into all upstream tools;
+  consumers MUST reject it unless the referenced integration declares
+  `allow_undeclared_tools: true`.
+
 ## Schema `@afps-spec/schema@0.4.0` — 2026-05-27
 
 Breaking schema change (no spec-version bump; `0.x` makes no back-compat promise).

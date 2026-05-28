@@ -186,7 +186,12 @@ export const dependenciesSchema = z
  * disambiguator for multi-auth integrations.
  */
 export const integrationConfigurationObject = z.looseObject({
-  tools: z.array(z.string()).optional(),
+  // `tools: "*"` is an opt-in wildcard: the agent forgoes per-tool selection
+  // and accepts every tool the upstream MCP server advertises at runtime.
+  // The referenced integration MUST declare `allow_undeclared_tools: true`
+  // (validated by consumers against the resolved integration manifest); the
+  // schema only constrains the wire shape here.
+  tools: z.union([z.array(z.string()), z.literal("*")]).optional(),
   scopes: z.array(z.string()).optional(),
   auth_key: z
     .string()
@@ -745,6 +750,15 @@ export function createSchemas(majorVersion: number) {
       // referenced as a `connect.tool` (run-start primitives) are auto-
       // hidden, so `hidden_tools` only needs to enumerate the rest.
       hidden_tools: z.array(z.string()).optional(),
+      // Opt-in author flag: when `true`, an agent MAY set
+      // `integrations_configuration.<id>.tools = "*"` and the runtime will
+      // pass through every tool the upstream MCP server advertises (no
+      // allowlist filter). Required OAuth scopes for that agent then fall
+      // back to the selected auth's `default_scopes` (§7.4), so the chosen
+      // auth MUST declare a non-empty `default_scopes`. Default `false`
+      // preserves zero-trust: the agent author cannot bypass the policy
+      // table unless the integration author explicitly authorizes it.
+      allow_undeclared_tools: z.boolean().optional(),
       setup_guide: setupGuide.optional(),
     })
     .superRefine((val, ctx) => {
@@ -759,6 +773,29 @@ export function createSchemas(majorVersion: number) {
       }
       for (const [key, method] of Object.entries(auths)) {
         refineAuthMethod(key, method, ctx);
+      }
+      // `allow_undeclared_tools` requires at least one auth to be
+      // "wildcard-usable" — i.e. either a non-oauth2 auth (no scope
+      // mechanism, the wholesale grant covers any tool) or an oauth2
+      // auth with non-empty `default_scopes` (the fallback scope set
+      // for a wildcard agent). Without one such auth, a wildcard agent
+      // has no usable consent path and the OAuth grant collapses to
+      // empty for every auth it might pick.
+      if (val.allow_undeclared_tools === true) {
+        const hasWildcardUsableAuth = Object.values(auths).some((m) => {
+          const auth = m as { type?: unknown; default_scopes?: unknown };
+          if (auth.type !== "oauth2") return true;
+          const ds = auth.default_scopes;
+          return Array.isArray(ds) && ds.length > 0;
+        });
+        if (!hasWildcardUsableAuth) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["allow_undeclared_tools"],
+            message:
+              "allow_undeclared_tools: true requires at least one auth to be wildcard-usable — either a non-oauth2 auth (api_key/basic/custom/mtls; no scope mechanism) or an oauth2 auth with non-empty default_scopes (used as the agent's scope set when tools = \"*\")",
+          });
+        }
       }
     });
 

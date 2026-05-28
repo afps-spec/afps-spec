@@ -611,6 +611,8 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 
 > The integration manifest uses the common-fields `icon` / `icons` (§3.1) for presentation; the legacy integration-scoped `icon` field is folded into the common fields and is no longer documented separately here.
 
+> The integration manifest also accepts the tool-surface fields `tools_policy`, `hidden_tools`, and `allow_undeclared_tools` — full descriptions live under §7.8 (Per-Tool Policy) since they are part of the authentication / runtime-surface model rather than the structural envelope.
+
 #### `INTEGRATION.md`
 - **Required**: MAY
 - **Format**: Markdown file at archive root
@@ -676,7 +678,7 @@ The top-level `integrations_configuration` map, keyed by integration package id,
 
 Each key MUST be a scoped name (§2.2) that corresponds to an entry in `dependencies.integrations` — `dependencies.integrations` is the canonical declaration that an integration is a dependency, and configuration for an integration not declared there is an error. Each value is an object with the following OPTIONAL fields:
 
-- `tools` (array of strings) — the integration tool names the agent consumes. Consumers use this selection to build the runtime tool allowlist exposed to the agent and to infer the minimum OAuth scope set (the union of the scopes required by the selected tools, §7.4). An absent or empty `tools` array means the agent selected no tools from this integration.
+- `tools` (array of strings or the wildcard literal `"*"`) — the integration tool names the agent consumes. Consumers use this selection to build the runtime tool allowlist exposed to the agent and to infer the minimum OAuth scope set (the union of the scopes required by the selected tools, §7.4). An absent or empty array means the agent selected no tools from this integration. The wildcard form `tools: "*"` opts the agent into every tool the upstream MCP server advertises at runtime; consumers MUST reject it unless the referenced integration declares `allow_undeclared_tools: true` (§7.8), and they MUST then use the selected auth's `default_scopes` (§7.4) as the agent's scope set instead of the per-tool union.
 - `scopes` (array of strings) — explicit OAuth scopes the agent requests from this integration, in addition to any inferred from `tools`. Consumers compute the effective requested scope set as the union across the agent's configured integrations (§7.4).
 - `auth_key` (string) — selects an `auths.<key>` entry when the referenced integration declares more than one auth method. When omitted, consumers select the integration's sole auth method, or apply consumer-defined policy when multiple exist.
 
@@ -821,7 +823,7 @@ A consumer MAY construct an execution context from:
 - `prompt.md`;
 - validated `input` and `config` data;
 - resolved skills, MCP servers, and integrations; and
-- per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools`, `scopes`, and `auth_key`.
+- per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools` (a string array, or the wildcard literal `"*"` when permitted by the integration's `allow_undeclared_tools` — §7.8), `scopes`, and `auth_key`.
 
 AFPS does not define prompt templating, state persistence, scheduling, or transport semantics. Those concerns are out of scope.
 
@@ -911,7 +913,7 @@ OAuth scopes are declared in two AFPS fields, distinct from the non-authoritativ
 #### `default_scopes`
 - **Type**: array of strings
 - **Required**: MAY
-- **Description**: The baseline scope set requested when an agent does not request a narrower or wider set. The effective requested scopes for an agent are computed from the agent's `integrations_configuration.<id>` entry (§4.4) — the union of scopes inferred from its selected `tools` and any explicit `scopes` — defaulting to `default_scopes` when unspecified.
+- **Description**: The baseline scope set requested when an agent does not request a narrower or wider set. The effective requested scopes for an agent are computed from the agent's `integrations_configuration.<id>` entry (§4.4) — the union of scopes inferred from its selected `tools` and any explicit `scopes` — defaulting to `default_scopes` when unspecified. When an agent uses the wildcard form `tools: "*"` (§7.8 `allow_undeclared_tools`) under an `oauth2` auth, per-tool scope inference is bypassed and `default_scopes` becomes the agent's scope set (still unioned with any explicit `scopes`); the integration MUST therefore declare a non-empty `default_scopes` on the targeted oauth2 auth. Non-`oauth2` auths (`api_key`, `basic`, `custom`, `mtls`) have no scope mechanism — they are wildcard-usable wholesale without `default_scopes`.
 
 #### `scope_catalog`
 - **Type**: array of objects
@@ -1061,6 +1063,18 @@ When `integration.tools_policy.<name>` is declared, it **augments** the canonica
 #### `hidden_tools`
 
 `integration.hidden_tools` is an OPTIONAL array of tool names. Tools listed here exist in the resolved canonical catalog but MUST NOT be exposed to the agent's tool picker / `tools/list` surface. Tools referenced by a `connect.tool` (run-start primitives) are auto-hidden, so `hidden_tools` only needs to enumerate the remaining tool names to suppress.
+
+#### `allow_undeclared_tools`
+
+`integration.allow_undeclared_tools` is an OPTIONAL boolean (default `false`). When `true`, an agent MAY set its `integrations_configuration.<id>.tools` to the wildcard literal `"*"` (§4.4). The runtime then disables the per-tool allowlist filter and passes through every tool the upstream MCP server advertises at run time, including tools the manifest does not enumerate in `tools_policy`.
+
+The integration MUST declare at least one **wildcard-usable** auth, defined as either:
+- a non-`oauth2` auth (`api_key`, `basic`, `custom`, `mtls`) — these grant access wholesale and carry no scope mechanism, so the wildcard surface is always usable under such an auth; or
+- an `oauth2` auth with a non-empty `default_scopes` (§7.4) — the fallback scope set requested when an agent uses `tools: "*"` under that auth.
+
+When an agent picks an `oauth2` auth (via `integrations_configuration.<id>.auth_key`, or implicitly when only one auth exists) with `tools: "*"`, the agent's scope set is `default_scopes` (still unioned with any explicit `scopes`); when it picks a non-`oauth2` auth, no scopes are required. Consumers MUST reject an agent that requests `tools: "*"` against an integration where `allow_undeclared_tools` is not `true`.
+
+> **Note.** This is the integration author's opt-in to a coarse-grained, forward-compatible surface (e.g. a remote MCP that grows its toolset between manifest republishes). It preserves zero-trust: the agent author cannot bypass the policy table unless the integration author explicitly authorizes a blanket pass-through.
 
 > **Note (placement).** Per-tool policy lives on the integration because the policy itself (the per-auth `required_scopes` map) is a property of how the credentialed binding is used, not of the server's tool list.
 
@@ -1287,7 +1301,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `dependencies.mcp_servers` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
 | `dependencies.integrations` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
 | `integrations_configuration` | agent | map | MAY | per-integration config keyed by declared integration id (§4.4) | none |
-| `integrations_configuration.<id>.tools` | agent | string[] | MAY | integration tool names the agent consumes (§4.4, §7.4) | none |
+| `integrations_configuration.<id>.tools` | agent | string[] \| "*" | MAY | integration tool names the agent consumes; `"*"` opts into all upstream tools when the integration declares `allow_undeclared_tools: true` (§4.4, §7.4, §7.8) | none |
 | `integrations_configuration.<id>.scopes` | agent | string[] | MAY | requested OAuth scopes for the integration (§7.4) | none |
 | `integrations_configuration.<id>.auth_key` | agent | string | MAY | selects an `auths.<key>` entry on the integration | none |
 | `input` | agent | object | MAY | per-run data; requires `schema` child | none |
@@ -1360,6 +1374,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `tools_policy` | integration | object | MAY | sparse per-tool policy table (augments canonical tool catalog of the referenced source); keys MUST resolve in the canonical catalog | none |
 | `tools_policy.<name>.required_scopes` | integration | object `{ <auth_key>: string[] }` | MAY | per-auth scopes a tool requires; each key a declared `auths` entry, scopes ⊆ that auth's `scope_catalog` (consent inference, not an exclusivity lock) | none |
 | `hidden_tools` | integration | string[] | MAY | tool names suppressed from the agent's surface; tools used as `connect.tool` are auto-hidden | none |
+| `allow_undeclared_tools` | integration | boolean | MAY | opt-in: when `true`, an agent MAY set `integrations_configuration.<id>.tools = "*"` to pass through every upstream tool (§7.8); requires ≥1 auth with non-empty `default_scopes` | `false` |
 | `setup_guide` | integration | object | MAY | setup metadata | none |
 | `setup_guide.callback_url_hint` | integration | string | MAY (deprecated) | superseded by `auths.<key>.callback_url_hint`; kept for backward compatibility | none |
 | `setup_guide.steps` | integration | object[] | MAY | ordered setup steps | none |

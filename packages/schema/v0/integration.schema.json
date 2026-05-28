@@ -967,6 +967,9 @@
         "type": "string"
       }
     },
+    "allow_undeclared_tools": {
+      "type": "boolean"
+    },
     "setup_guide": {
       "type": "object",
       "properties": {
