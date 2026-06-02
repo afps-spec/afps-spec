@@ -610,7 +610,7 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 - **Default**: none
 
 > The integration manifest uses the common-fields `icon` / `icons` (§3.1) for presentation.
-
+>
 > The integration manifest also accepts the tool-surface fields `tools_policy`, `hidden_tools`, and `allow_undeclared_tools` — full descriptions live under §7.8 (Per-Tool Policy) since they are part of the authentication / runtime-surface model rather than the structural envelope.
 
 #### `INTEGRATION.md`
@@ -1085,7 +1085,7 @@ The integration MUST declare at least one **wildcard-usable** auth, defined as e
 When an agent picks an `oauth2` auth (via `integrations_configuration.<id>.auth_key`, or implicitly when only one auth exists) with `tools: "*"`, the agent's scope set is `default_scopes` (still unioned with any explicit `scopes`); when it picks a non-`oauth2` auth, no scopes are required. Consumers MUST reject an agent that requests `tools: "*"` against an integration where `allow_undeclared_tools` is not `true`.
 
 > **Note.** This is the integration author's opt-in to a coarse-grained, forward-compatible surface (e.g. a remote MCP that grows its toolset between manifest republishes). It preserves zero-trust: the agent author cannot bypass the policy table unless the integration author explicitly authorizes a blanket pass-through.
-
+>
 > **Note (placement).** Per-tool policy lives on the integration because the policy itself (the per-auth `required_scopes` map) is a property of how the credentialed binding is used, not of the server's tool list.
 
 ### 7.9 URI Restrictions
