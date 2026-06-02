@@ -39,16 +39,6 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
 
     const method = schema.properties.auths.additionalProperties as Record<string, any>;
     method.allOf = [
-      // §7.3 — oauth2 requires issuer (discovery) OR both endpoints.
-      {
-        if: { properties: { type: { const: "oauth2" } }, required: ["type"] },
-        then: {
-          anyOf: [
-            { required: ["issuer"] },
-            { required: ["authorization_endpoint", "token_endpoint"] },
-          ],
-        },
-      },
       // §7.5 — credentials.schema required for api_key/basic/mtls/custom.
       {
         if: { properties: { type: { enum: ["api_key", "basic", "mtls", "custom"] } }, required: ["type"] },
@@ -68,6 +58,42 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
             },
           },
           required: ["type"],
+        },
+      },
+    ];
+
+    // §7.3 — oauth2 requires issuer (discovery) OR both endpoints, EXCEPT when
+    // the integration `source.kind` is `remote`: a remote MCP server is an
+    // OAuth protected resource whose authorization server is discovered at
+    // connect time from `source.remote.url` (RFC 9728 → RFC 8414), so its
+    // oauth2 auth MAY omit both. This rule lives at the manifest root because it
+    // cross-references `source` (sibling of `auths`); when the source is
+    // `remote` the per-auth oauth2 endpoint requirement is lifted.
+    schema.allOf = [
+      {
+        if: {
+          properties: { source: { properties: { kind: { const: "remote" } }, required: ["kind"] } },
+          required: ["source"],
+        },
+        then: true,
+        else: {
+          properties: {
+            auths: {
+              additionalProperties: {
+                allOf: [
+                  {
+                    if: { properties: { type: { const: "oauth2" } }, required: ["type"] },
+                    then: {
+                      anyOf: [
+                        { required: ["issuer"] },
+                        { required: ["authorization_endpoint", "token_endpoint"] },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
         },
       },
     ];

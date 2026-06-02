@@ -174,9 +174,6 @@ describe("cross-field MUST rules injected into JSON Schema (lockstep with Zod su
   test("§7 — auth method carries the conditional allOf rules", () => {
     const allOf = integ.properties.auths.additionalProperties.allOf;
     expect(Array.isArray(allOf)).toBe(true);
-    // oauth2 → issuer OR endpoints
-    const oauth = allOf.find((r: any) => r.if?.properties?.type?.const === "oauth2");
-    expect(oauth?.then?.anyOf).toBeDefined();
     // api_key/basic/mtls/custom → credentials.schema required
     const creds = allOf.find((r: any) =>
       Array.isArray(r.if?.properties?.type?.enum),
@@ -186,6 +183,22 @@ describe("cross-field MUST rules injected into JSON Schema (lockstep with Zod su
     const connect = allOf.find((r: any) => r.if?.required?.includes("connect"));
     expect(connect?.then?.properties?.type?.const).toBe("custom");
     expect(connect?.then?.properties?.connect?.oneOf?.length).toBe(2);
+  });
+
+  test("§7.3 — oauth2 issuer-or-endpoints rule is gated on a non-remote source", () => {
+    // The rule lives at the manifest root because it cross-references `source`.
+    // remote source → exempt (then: true); otherwise the per-auth oauth2 rule
+    // applies via the else branch.
+    const rule = integ.allOf?.find(
+      (r: any) => r.if?.properties?.source?.properties?.kind?.const === "remote",
+    );
+    expect(rule).toBeDefined();
+    expect(rule.then).toBe(true);
+    const oauth = rule.else?.properties?.auths?.additionalProperties?.allOf?.find(
+      (r: any) => r.if?.properties?.type?.const === "oauth2",
+    );
+    expect(oauth?.then?.anyOf).toBeDefined();
+    expect(oauth.then.anyOf).toContainEqual({ required: ["issuer"] });
   });
 
   test("§7.6 — delivery requires ≥1 channel and http is exclusive of env/files", () => {

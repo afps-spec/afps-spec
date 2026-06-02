@@ -530,20 +530,27 @@ function refineAuthMethod(
   key: string,
   method: Record<string, unknown>,
   ctx: z.RefinementCtx,
+  sourceKind?: unknown,
 ): void {
   const at = ["auths", key];
   const type = method.type;
 
   if (type === "oauth2") {
     // §7.3 — issuer enables discovery; otherwise endpoints are required.
+    // Exception: a `remote` source is an OAuth protected resource whose
+    // authorization server (and thus its endpoints) is discovered at connect
+    // time from `source.remote.url` — RFC 9728 protected-resource metadata →
+    // RFC 8414 authorization-server metadata. Such an auth MAY therefore omit
+    // both `issuer` and the explicit endpoints.
+    const isRemoteSource = sourceKind === "remote";
     const hasIssuer = typeof method.issuer === "string" && method.issuer.length > 0;
     const hasEndpoints = method.authorization_endpoint != null && method.token_endpoint != null;
-    if (!hasIssuer && !hasEndpoints) {
+    if (!isRemoteSource && !hasIssuer && !hasEndpoints) {
       ctx.addIssue({
         code: "custom",
         path: [...at],
         message:
-          "oauth2 auth method requires `issuer` (for discovery) OR both `authorization_endpoint` and `token_endpoint`",
+          "oauth2 auth method requires `issuer` (for discovery) OR both `authorization_endpoint` and `token_endpoint` (unless the integration `source.kind` is `remote`, where the authorization server is discovered from `source.remote.url`)",
       });
     }
   } else if (type === "api_key" || type === "basic" || type === "mtls" || type === "custom") {
@@ -769,8 +776,9 @@ export function createSchemas(majorVersion: number) {
         });
         return;
       }
+      const sourceKind = (val.source as { kind?: unknown } | undefined)?.kind;
       for (const [key, method] of Object.entries(auths)) {
-        refineAuthMethod(key, method, ctx);
+        refineAuthMethod(key, method, ctx, sourceKind);
       }
       // `allow_undeclared_tools` requires at least one auth to be
       // "wildcard-usable" — i.e. either a non-oauth2 auth (no scope
