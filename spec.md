@@ -610,7 +610,7 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 - **Default**: none
 
 > The integration manifest uses the common-fields `icon` / `icons` (§3.1) for presentation.
-
+>
 > The integration manifest also accepts the tool-surface fields `tools_policy`, `hidden_tools`, and `allow_undeclared_tools` — full descriptions live under §7.8 (Per-Tool Policy) since they are part of the authentication / runtime-surface model rather than the structural envelope.
 
 #### `INTEGRATION.md`
@@ -882,7 +882,7 @@ For an auth method of `type: "oauth2"`, the endpoint set is resolved **discovery
 #### `issuer`
 - **Type**: string (URI)
 - **Required**: SHOULD (REQUIRED to enable discovery)
-- **Description**: The OAuth 2.0 / OIDC issuer identifier. Consumers use it to locate the authorization server metadata document. When `issuer` is absent, the manual endpoint fields below are REQUIRED.
+- **Description**: The OAuth 2.0 / OIDC issuer identifier. Consumers use it to locate the authorization server metadata document. When `issuer` is absent, the manual endpoint fields below are REQUIRED — **except** when the integration's `source.kind` is `remote` (§7.1), in which case both `issuer` and the manual endpoints MAY be omitted and are resolved at connect time from `source.remote.url` (see *Remote MCP authorization* below).
 
 #### Endpoint fields (RFC 8414 / OIDC Discovery vocabulary, verbatim)
 
@@ -905,6 +905,16 @@ When `issuer` is present and a consumer performs discovery, it MUST probe the th
 3. OIDC path-append: `https://{host}{/path}/.well-known/openid-configuration`.
 
 A consumer MUST validate that the returned `issuer` equals the configured issuer before using any discovered endpoint. Discovery failure MUST fall back to the manual endpoint fields; it MUST NOT block configuration when those fields are present. See §8.7 for the SSRF considerations of fetching discovery documents.
+
+#### Remote MCP authorization
+
+When the integration's `source.kind` is `remote` (§7.1), the remote MCP server is an OAuth 2.0 **protected resource** and its authorization server is not known until connect time. For such an integration an `oauth2` auth MAY omit `issuer` and the manual endpoints entirely; a consumer that supports remote MCP authorization resolves them from `source.remote.url` following the [Model Context Protocol authorization model]:
+
+1. **Protected-resource metadata** ([RFC 9728]) — the consumer derives the protected-resource metadata document from `source.remote.url` (well-known probe, or the `resource_metadata` parameter of a `WWW-Authenticate` challenge on an unauthenticated request). It advertises the canonical `resource` (used as the [RFC 8707] resource indicator on the token request) and the `authorization_servers`.
+2. **Authorization-server metadata** ([RFC 8414]) — discovery against the advertised issuer yields `authorization_endpoint`, `token_endpoint`, and — when the server supports it — a `registration_endpoint`.
+3. **Client acquisition** — the consumer obtains an OAuth client for that authorization server, in priority order: a pre-registered client if one exists; otherwise a client established without manual pre-registration ([Client ID Metadata Documents] when the authorization server advertises support, or [RFC 7591] Dynamic Client Registration when it advertises a `registration_endpoint`). Public-client + PKCE ([RFC 7636]) is the norm (`token_endpoint_auth_method: "none"`).
+
+A manifest MAY still declare `issuer`, endpoints, or `resource` for a `remote` source; any explicitly declared value overrides the discovered one (discovery is enrichment, not a precondition — §7.3). This onboarding is a **consumer concern**: AFPS describes the manifest surface, not the runtime OAuth client implementation. A consumer that does not support remote MCP authorization MUST still treat a manually-configured `remote` integration (one that declares `issuer` or endpoints) as valid. See §8.7 for the SSRF considerations of fetching discovery and registration documents.
 
 ### 7.4 Scopes
 
@@ -1075,7 +1085,7 @@ The integration MUST declare at least one **wildcard-usable** auth, defined as e
 When an agent picks an `oauth2` auth (via `integrations_configuration.<id>.auth_key`, or implicitly when only one auth exists) with `tools: "*"`, the agent's scope set is `default_scopes` (still unioned with any explicit `scopes`); when it picks a non-`oauth2` auth, no scopes are required. Consumers MUST reject an agent that requests `tools: "*"` against an integration where `allow_undeclared_tools` is not `true`.
 
 > **Note.** This is the integration author's opt-in to a coarse-grained, forward-compatible surface (e.g. a remote MCP that grows its toolset between manifest republishes). It preserves zero-trust: the agent author cannot bypass the policy table unless the integration author explicitly authorizes a blanket pass-through.
-
+>
 > **Note (placement).** Per-tool policy lives on the integration because the policy itself (the per-auth `required_scopes` map) is a property of how the credentialed binding is used, not of the server's tool list.
 
 ### 7.9 URI Restrictions
@@ -1246,6 +1256,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 - **[RFC 7636]** Sakimura, N., Ed., Bradley, J., Agarwal, N., "Proof Key for Code Exchange by OAuth Public Clients", RFC 7636, September 2015. https://datatracker.ietf.org/doc/html/rfc7636
 - **[RFC 8414]** Jones, M., Sakimura, N., Bradley, J., "OAuth 2.0 Authorization Server Metadata", RFC 8414, June 2018. https://datatracker.ietf.org/doc/html/rfc8414
 - **[RFC 8707]** Campbell, B., Bradley, J., Jay, H., "Resource Indicators for OAuth 2.0", RFC 8707, February 2020. https://datatracker.ietf.org/doc/html/rfc8707
+- **[RFC 9728]** Jones, M., Hunt, P., Parecki, A., "OAuth 2.0 Protected Resource Metadata", RFC 9728, April 2025. https://datatracker.ietf.org/doc/html/rfc9728
 - **[RFC 4648]** Josefsson, S., "The Base16, Base32, and Base64 Data Encodings", RFC 4648, October 2006. https://datatracker.ietf.org/doc/html/rfc4648
 - **[RFC 9535]** Bormann, C., Bray, T., Gössner, S., "JSONPath: Query Expressions for JSON", RFC 9535, February 2024. https://datatracker.ietf.org/doc/html/rfc9535
 - **[XML Path Language 3.1]** W3C Recommendation, "XML Path Language (XPath) 3.1", March 2017. https://www.w3.org/TR/xpath-31/
@@ -1261,6 +1272,8 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 ### Informative References
 
 - **[MCP]** Model Context Protocol Specification. https://modelcontextprotocol.io/specification
+- **[Model Context Protocol authorization model]** Model Context Protocol — Authorization. https://modelcontextprotocol.io/specification/draft/basic/authorization
+- **[Client ID Metadata Documents]** OAuth Client ID Metadata Document (CIMD), MCP SEP-991. https://modelcontextprotocol.io/specification/draft/basic/authorization
 - **[Arazzo]** OpenAPI Arazzo Specification (Workflows). https://spec.openapis.org/arazzo/latest.html
 - **[A2A]** Agent-to-Agent Protocol. https://a2a-protocol.org/latest/specification/
 - **[Agent Skills]** Anthropic Agent Skills Specification. https://agentskills.io/home
@@ -1332,9 +1345,9 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `source.remote.transport` | integration | string | MUST for `kind=remote` | `streamable-http\|sse` | none |
 | `auths` | integration | object | MUST | map keyed by `^[a-z][a-z0-9_]*$`; ≥1 entry | none |
 | `auths.<key>.type` | integration | string | MUST | `oauth2\|api_key\|basic\|mtls\|custom` | none |
-| `auths.<key>.issuer` | integration | string | SHOULD for oauth2 | OAuth/OIDC issuer; enables discovery | none |
-| `auths.<key>.authorization_endpoint` | integration | string | MUST for oauth2 w/o discovery | RFC 8414 | none |
-| `auths.<key>.token_endpoint` | integration | string | MUST for oauth2 w/o discovery | RFC 8414 | none |
+| `auths.<key>.issuer` | integration | string | SHOULD for oauth2 (not required when `source.kind` is `remote`) | OAuth/OIDC issuer; enables discovery. For a `remote` source, discovered at connect time from `source.remote.url` (§7.3) | none |
+| `auths.<key>.authorization_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote`) | RFC 8414 | none |
+| `auths.<key>.token_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote`) | RFC 8414 | none |
 | `auths.<key>.userinfo_endpoint` | integration | string | MAY | OIDC Discovery | none |
 | `auths.<key>.token_endpoint_auth_method` | integration | string | MAY | RFC 7591 / OIDC Core values; `client_secret_basic` default (RFC 8414 §2, RFC 7591 §2) | none |
 | `auths.<key>.code_challenge_methods_supported` | integration | string[] | MAY | PKCE methods, e.g. `["S256"]` (RFC 8414 / RFC 7636) | none |

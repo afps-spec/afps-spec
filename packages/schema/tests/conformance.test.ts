@@ -818,6 +818,41 @@ describe("integration auth methods (§7.2 – §7.5)", () => {
     );
   });
 
+  test("oauth2 on a `remote` source MAY omit issuer AND endpoints (§7.3 discovery)", () => {
+    const remoteAuth = {
+      o: {
+        type: "oauth2",
+        default_scopes: ["read"],
+        delivery: { http: { in: "header", name: "Authorization", value: "{$credential.t}" } },
+      },
+    };
+    // remote source — endpoints discovered from source.remote.url at connect time
+    expectValid(integrationManifestSchema, {
+      ...base,
+      source: { kind: "remote", remote: { url: "https://mcp.example.com/mcp", transport: "streamable-http" } },
+      auths: remoteAuth,
+    });
+    // same auth on a non-remote source — still rejected (issuer/endpoints required)
+    expectInvalid(integrationManifestSchema, {
+      ...base,
+      source: { kind: "none" },
+      auths: remoteAuth,
+    });
+    // remote source MAY still pin issuer explicitly (override wins)
+    expectValid(integrationManifestSchema, {
+      ...base,
+      source: { kind: "remote", remote: { url: "https://mcp.example.com/mcp", transport: "streamable-http" } },
+      auths: {
+        o: {
+          type: "oauth2",
+          issuer: "https://mcp.example.com",
+          default_scopes: ["read"],
+          delivery: { http: { in: "header", name: "Authorization", value: "{$credential.t}" } },
+        },
+      },
+    });
+  });
+
   test("oauth2 optional fields accepted (token_endpoint_auth_method, pkce, resource, scope_catalog)", () => {
     expectValid(
       integrationManifestSchema,
