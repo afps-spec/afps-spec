@@ -1,5 +1,22 @@
 # Changelog
 
+## Schema `@afps-spec/schema@0.6.0` — 2026-06-03
+
+Additive schema change (relaxation — no manifest that validated under 0.5.0
+becomes invalid).
+
+- §7.3 oauth2 issuer-or-endpoints requirement is now **waived for `remote`
+  sources**. A remote MCP server is an OAuth 2.0 protected resource whose
+  authorization server is not known until connect time; the consumer discovers
+  it from `source.remote.url` (RFC 9728 protected-resource metadata → RFC 8414
+  authorization-server metadata) and obtains a client without manual
+  pre-registration (CIMD or RFC 7591 DCR). An `oauth2` auth on a `remote`
+  integration MAY therefore omit both `issuer` and the explicit
+  `authorization_endpoint` / `token_endpoint`. Non-remote sources are unchanged:
+  they still require `issuer` OR both endpoints. The Zod schema threads
+  `source.kind` into the per-auth refinement; the generated JSON Schema lifts the
+  oauth2 rule to a root-level `if (source.kind == "remote") then true else <rule>`.
+
 ## Schema `@afps-spec/schema@0.5.0` — 2026-05-28
 
 Additive schema change.
