@@ -1,5 +1,19 @@
 # Changelog
 
+## Schema `@afps-spec/schema@0.6.1` — 2026-06-08
+
+Editorial change (no validation semantics change — every manifest valid under
+0.6.0 stays valid, and the `schema_version` regex is unchanged).
+
+- `schema_version` authoring DX: the `MAJOR.MINOR` format hint now also rides
+  the `invalid_type` path, so an **omitted** required `schema_version` reports
+  the expected shape instead of the bare "expected string, received undefined".
+  The field also gained a `.describe()` annotation that flows into the generated
+  v0 JSON Schemas (and surfaces in JSON Schema / MCP `describe_operation`
+  consumers). Both messages note `schema_version` is distinct from the semver
+  `version` field in the same manifest. Generated `v0/*.schema.json` carry the
+  new `description`; no `type` / `pattern` / `required` changed.
+
 ## Schema `@afps-spec/schema@0.6.0` — 2026-06-03
 
 Additive schema change (relaxation — no manifest that validated under 0.5.0

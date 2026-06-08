@@ -615,11 +615,23 @@ function refineAuthMethod(
 // ─────────────────────────────────────────────
 
 export function createSchemas(majorVersion: number) {
+  // The `error` on the base string carries the format hint onto the
+  // invalid_type path too — so an OMITTED required `schema_version` reports
+  // the expected shape (and that it differs from the semver `version` field)
+  // instead of the bare "expected string, received undefined". The `.regex`
+  // error still owns the wrong-format message. `.describe` flows into the
+  // generated JSON Schema (and MCP `describe_operation`) so schema consumers
+  // see the format + example without parsing the pattern.
   const schemaVersionField = z
-    .string()
+    .string({
+      error: `schema_version is required and must follow MAJOR.MINOR format (e.g. "${majorVersion}.0") — note this is distinct from the package "version" field, which uses full semver (e.g. "1.0.0")`,
+    })
     .regex(new RegExp(`^${majorVersion}\\.(0|[1-9]\\d*)$`), {
       error: `Must follow MAJOR.MINOR format (e.g. "${majorVersion}.0")`,
-    });
+    })
+    .describe(
+      `AFPS schema version this manifest targets, in MAJOR.MINOR format (e.g. "${majorVersion}.0"). Distinct from the package "version" field, which uses full MAJOR.MINOR.PATCH semver.`,
+    );
 
   // Author/Repository: string or structured object (§3.1).
   const authorObject = z.looseObject({

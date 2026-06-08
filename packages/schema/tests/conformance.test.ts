@@ -9,6 +9,8 @@
  */
 
 import { describe, test, expect } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   agentManifestSchema,
   skillManifestSchema,
@@ -293,6 +295,25 @@ describe("schema_version (§2.4, §3.2)", () => {
 
   test("schema_version is required for agents", () => {
     expectInvalid(agentManifestSchema, { ...agentBase });
+  });
+
+  test("omitted schema_version error carries the MAJOR.MINOR format hint", () => {
+    const result = agentManifestSchema.safeParse({ ...agentBase });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.path.join(".") === "schema_version");
+    expect(issue).toBeDefined();
+    // The bare Zod default would be "expected string, received undefined" with
+    // no format guidance — assert the hint replaced it.
+    expect(issue!.message).toContain("MAJOR.MINOR");
+    expect(issue!.message).toContain("version");
+  });
+
+  test("schema_version field exposes a description in the generated JSON Schema", () => {
+    const agentSchema = JSON.parse(
+      readFileSync(join(import.meta.dir, "../v0/agent.schema.json"), "utf-8"),
+    ) as { properties?: { schema_version?: { description?: string } } };
+    expect(agentSchema.properties?.schema_version?.description).toContain("MAJOR.MINOR");
   });
 
   test("schema_version is optional for skills and integrations", () => {
