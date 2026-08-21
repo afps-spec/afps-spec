@@ -3,7 +3,7 @@
   "name": "@example/internal-api",
   "version": "1.0.0",
   "type": "integration",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "display_name": "Internal API",
   "description": "HTTP Basic authentication for an internal REST API.",
   "keywords": ["internal", "api"],

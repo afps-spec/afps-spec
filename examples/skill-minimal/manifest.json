@@ -3,6 +3,6 @@
   "name": "@example/rewrite-tone",
   "version": "1.0.0",
   "type": "skill",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "display_name": "Rewrite Tone"
 }

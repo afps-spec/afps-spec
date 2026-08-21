@@ -135,15 +135,15 @@ const entries = [
     filename: "agent.schema.json",
     title: "AFPS Agent Manifest",
     description:
-      "Manifest schema for AFPS 0.2 agent packages. " +
-      "An agent declares dependencies, input/output/config schemas, a timeout hint, and per-integration configuration.",
+      "Manifest schema for AFPS 0.3 agent packages. " +
+      "An agent declares dependencies, input/output schemas, a timeout hint, and per-integration configuration.",
     schema: agentManifestSchema,
   },
   {
     filename: "skill.schema.json",
     title: "AFPS Skill Manifest",
     description:
-      "Manifest schema for AFPS 0.2 skill packages. " +
+      "Manifest schema for AFPS 0.3 skill packages. " +
       "A skill is a superset of the Agent Skills format with package identity and versioning.",
     schema: skillManifestSchema,
   },
@@ -151,7 +151,7 @@ const entries = [
     filename: "mcp-server.schema.json",
     title: "AFPS MCP-Server Manifest",
     description:
-      "Manifest schema for AFPS 0.2 mcp-server packages. " +
+      "Manifest schema for AFPS 0.3 mcp-server packages. " +
       "The manifest is AFPS-native at the root (type, schema_version, scoped name, dependencies) and adopts " +
       "the MCPB field vocabulary (manifest_version, server, tools, user_config) verbatim; it is not a strict MCPB manifest.",
     schema: mcpServerManifestSchema,
@@ -160,7 +160,7 @@ const entries = [
     filename: "integration.schema.json",
     title: "AFPS Integration Manifest",
     description:
-      "Manifest schema for AFPS 0.2 integration packages. " +
+      "Manifest schema for AFPS 0.3 integration packages. " +
       "An integration declares a capability source, one or more authentication methods, and credential delivery.",
     schema: integrationManifestSchema,
   },

@@ -3,7 +3,7 @@
   "name": "@example/openai",
   "version": "1.0.0",
   "type": "integration",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "display_name": "OpenAI",
   "description": "OpenAI API connector using API key authentication.",
   "keywords": ["ai", "language-model"],

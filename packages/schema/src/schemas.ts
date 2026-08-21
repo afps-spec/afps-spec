@@ -133,7 +133,7 @@ export const metaSchema = z.record(
 );
 
 // ─────────────────────────────────────────────
-// Schema wrapper (§5.4) — input/output/config
+// Schema wrapper (§5.4) — input/output
 // ─────────────────────────────────────────────
 
 const fileConstraint = z.looseObject({
@@ -704,7 +704,6 @@ export function createSchemas(majorVersion: number) {
     integrations_configuration: z.record(scopedName, integrationConfigurationObject).optional(),
     input: schemaWrapper.optional(),
     output: schemaWrapper.optional(),
-    config: schemaWrapper.optional(),
     timeout: z.number().positive().optional(),
   });
 

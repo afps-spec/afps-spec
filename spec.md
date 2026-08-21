@@ -2,7 +2,7 @@
 
 **Copyright** &copy; 2026 AFPS contributors. Licensed under [Apache-2.0](./LICENSE).
 
-## Version 0.2 -- Draft
+## Version 0.3 -- Draft
 
 ### Abstract
 
@@ -12,11 +12,11 @@ AFPS uses a `snake_case` field vocabulary across all package types. The `mcp-ser
 
 ### Status of this Document
 
-This document is a **draft** of the AFPS specification, published at version `0.2` for community review and early implementation feedback. As a `0.x` draft, every part of this specification — field names, package model, and schema system — may change before a stable `1.0` release. There is no commitment to backward compatibility between `0.x` minor revisions.
+This document is a **draft** of the AFPS specification, published at version `0.3` for community review and early implementation feedback. As a `0.x` draft, every part of this specification — field names, package model, and schema system — may change before a stable `1.0` release. There is no commitment to backward compatibility between `0.x` minor revisions.
 
 - **Status**: Draft
-- **Version**: 0.2
-- **Date**: 2026-05-27
+- **Version**: 0.3
+- **Date**: 2026-08-21
 - **Editor**: AFPS contributors
 - **Feedback**: [GitHub Issues](https://github.com/afps-spec/afps-spec/issues) using the [spec change template](https://github.com/afps-spec/afps-spec/issues/new?template=spec-change.yml)
 - **License**: [Apache-2.0](./LICENSE)
@@ -52,7 +52,7 @@ This draft is published for community review and early implementation feedback. 
   - [5.1 JSON Schema Properties](#51-json-schema-properties)
   - [5.2 File Field Convention](#52-file-field-convention)
   - [5.3 Schema Object Structure](#53-schema-object-structure)
-  - [5.4 Input, Output, and Config Schemas](#54-input-output-and-config-schemas)
+  - [5.4 Input and Output Schemas](#54-input-and-output-schemas)
 - [6. Execution Model](#6-execution-model)
   - [6.1 Execution Context](#61-execution-context)
   - [6.2 Timeout](#62-timeout)
@@ -104,7 +104,7 @@ The goal of AFPS is to let producers publish portable artifacts that describe:
 - what a package is;
 - which other packages it depends on;
 - which integration connections it expects;
-- which input, output, and configuration shapes it exposes; and
+- which input and output shapes it exposes; and
 - which companion files are required for distribution.
 
 AFPS is intentionally centered on package definition. It standardizes package metadata and package layout, not runtime execution APIs.
@@ -118,7 +118,7 @@ This specification defines:
 - manifest fields and companion file requirements;
 - ZIP archive structure;
 - dependency declaration and dependency cycle semantics;
-- a constrained schema system used by `input`, `output`, `config`, and selected credential definitions;
+- a constrained schema system used by `input`, `output`, and selected credential definitions;
 - the packaging of MCP servers as MCP Bundles (MCPB); and
 - integration authentication, credential acquisition, and credential delivery metadata.
 
@@ -255,7 +255,7 @@ How consumers resolve version ranges against a package catalog is an implementat
 
 ### 2.4 Schema Version Compatibility
 
-AFPS package model evolution is tracked by the `schema_version` field, a `MAJOR.MINOR` string. A change in `MAJOR` indicates a breaking manifest model change; a change in `MINOR` indicates an additive, backwards-compatible revision. Packages targeting this specification emit `schema_version: "0.2"`. While AFPS is at major version `0`, any minor revision MAY introduce breaking changes.
+AFPS package model evolution is tracked by the `schema_version` field, a `MAJOR.MINOR` string. A change in `MAJOR` indicates a breaking manifest model change; a change in `MINOR` indicates an additive, backwards-compatible revision. Packages targeting this specification emit `schema_version: "0.3"`. While AFPS is at major version `0`, any minor revision MAY introduce breaking changes.
 
 `schema_version` applies to all four package types. An `mcp-server` manifest additionally carries `manifest_version`, which tags the MCPB-vocabulary version of its embedded server/tools/user_config block (§3.4); the two version fields are independent.
 
@@ -439,8 +439,8 @@ All manifests are JSON objects. Unknown top-level fields and unknown nested fiel
 - **Type**: string
 - **Required**: MUST for `agent`; MAY for `skill`, `mcp-server`, and `integration`
 - **Format**: `MAJOR.MINOR` where both segments are non-negative integers (e.g., `0.1`). The format follows a subset of semantic versioning without the patch component. A change in `MAJOR` indicates a breaking manifest model change; a change in `MINOR` indicates an additive, backwards-compatible revision. (While AFPS is at `MAJOR` `0`, a minor revision MAY also break compatibility.)
-- **Description**: Declares which version of the AFPS manifest model the package targets. This field allows consumers to select the appropriate validation rules when the specification evolves. Producers MUST emit at least `0.2` for packages targeting this specification; producers using fields introduced in a later minor revision MUST emit at least the minor that introduced them.
-- **Example**: `0.2`
+- **Description**: Declares which version of the AFPS manifest model the package targets. This field allows consumers to select the appropriate validation rules when the specification evolves. Producers MUST emit at least `0.3` for packages targeting this specification; producers using fields introduced in a later minor revision MUST emit at least the minor that introduced them.
+- **Example**: `0.3`
 - **Default**: none
 
 #### `dependencies`
@@ -473,14 +473,6 @@ An `agent` archive MUST contain `manifest.json` at the archive root and a non-em
 - **Format**: wrapper object containing a required `schema` member
 - **Description**: Describes the structured result that the agent produces at the end of each run. A consumer MAY use this schema to validate or parse the language model's response.
 - **Example**: `{ "schema": { "type": "object", "properties": { "summary": { "type": "string" } } } }`
-- **Default**: none
-
-#### `config`
-- **Type**: object
-- **Required**: MAY
-- **Format**: wrapper object containing a required `schema` member
-- **Description**: Describes agent configuration — settings that are defined once during setup and remain constant across runs. A consumer SHOULD persist config values and reuse them without prompting on each run. Typical examples include a preferred language, a target folder, or a notification threshold. Config values MAY have `default` values in the schema.
-- **Example**: `{ "schema": { "type": "object", "properties": { "language": { "type": "string", "default": "fr" } } } }`
 - **Default**: none
 
 #### `timeout`
@@ -546,7 +538,7 @@ Producers SHOULD keep `SKILL.md` under 500 lines and move detailed reference mat
 
 An `mcp-server` package declares a runnable, local MCP tool server. Its manifest is an AFPS-native manifest at the root (common fields per §3.1, `type: "mcp-server"`, `schema_version`, `name` scoped per §2.2, optional `dependencies` per §4.1) and additionally carries the **MCPB (MCP Bundle) field vocabulary** for the server run declaration, advisory tool list, and user-configuration mechanism.
 
-AFPS does not redefine these MCPB-vocabulary fields; it adopts them verbatim so that an existing MCPB server payload (the contents of an `mcpb init` scaffold) can be packaged as an `mcp-server` without modification. Strict-MCPB host interoperability (validating against the MCPB schema, installing into Claude Desktop or another MCPB host without conversion) is **not** a goal of AFPS 0.1: a publish-time projection to a strict MCPB bundle MAY be added in a future minor (§10.2). Producers that need strict-MCPB compatibility today MUST emit the strict form separately.
+AFPS does not redefine these MCPB-vocabulary fields; it adopts them verbatim so that an existing MCPB server payload (the contents of an `mcpb init` scaffold) can be packaged as an `mcp-server` without modification. Strict-MCPB host interoperability (validating against the MCPB schema, installing into Claude Desktop or another MCPB host without conversion) is **not** a goal of AFPS 0.3: a publish-time projection to a strict MCPB bundle MAY be added in a future minor (§10.2). Producers that need strict-MCPB compatibility today MUST emit the strict form separately.
 
 #### `manifest_version`
 - **Type**: string
@@ -686,7 +678,7 @@ Producers MAY add fields under `_meta` within a configuration object (§10).
 
 ## 5. Schema System
 
-AFPS uses standard JSON Schema 2020-12 for property definitions within agent `input`, `output`, and `config` sections, and within an integration auth method's `credentials.schema` (§7.5). The container schema MUST be an object with `type: "object"` and a `properties` record. Any valid JSON Schema 2020-12 keyword may be used within property definitions.
+AFPS uses standard JSON Schema 2020-12 for property definitions within agent `input` and `output` sections, and within an integration auth method's `credentials.schema` (§7.5). The container schema MUST be an object with `type: "object"` and a `properties` record. Any valid JSON Schema 2020-12 keyword may be used within property definitions.
 
 ### 5.1 JSON Schema Properties
 
@@ -758,9 +750,9 @@ It MAY also contain:
 
 Property definitions support the full JSON Schema 2020-12 vocabulary, including composition (`allOf`, `anyOf`, `oneOf`), conditionals (`if`/`then`/`else`), and references (`$ref`, `$defs`). The schema validator validates property definitions against the official JSON Schema 2020-12 meta-schema.
 
-### 5.4 Input, Output, and Config Schemas
+### 5.4 Input and Output Schemas
 
-`input`, `output`, and `config` all use a wrapper shape containing a required `schema` member and optional AFPS metadata:
+`input` and `output` both use a wrapper shape containing a required `schema` member and optional AFPS metadata:
 
 ```json
 {
@@ -799,15 +791,14 @@ The wrapper object is required when any of these sections are present. A bare sc
 - **Description**: Presentation hint for property ordering. Listed properties SHOULD be rendered first, in the given order. Properties present in `properties` but absent from `property_order` SHOULD be appended after the listed ones, in their natural object-key order.
 - **Example**: `["query", "attachments", "priority"]`
 
-Although the three sections share the same structural format, they have distinct semantics and lifecycles:
+Although the two sections share the same structural format, they have distinct semantics and lifecycles:
 
 | Section | Lifecycle | Timing | Description |
 | --- | --- | --- | --- |
 | `input` | Per-run | Supplied each time the agent runs | Data the user provides for a specific run (e.g., a search query, a file to process). |
 | `output` | Per-run | Produced at the end of each run | Structured result the agent returns (e.g., a summary, a report). |
-| `config` | Per-deployment | Set once during setup, reused across runs | Settings that remain constant across runs (e.g., preferred language, notification threshold). |
 
-A consumer SHOULD prompt for `input` values at each run and SHOULD persist `config` values so they do not need to be re-entered.
+A consumer SHOULD prompt for `input` values at each run.
 
 ## 6. Execution Model
 
@@ -821,7 +812,7 @@ A consumer MAY construct an execution context from:
 
 - the validated agent manifest;
 - `prompt.md`;
-- validated `input` and `config` data;
+- validated `input` data;
 - resolved skills, MCP servers, and integrations; and
 - per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools` (a string array, or the wildcard literal `"*"` when permitted by the integration's `allow_undeclared_tools` — §7.8), `scopes`, and `auth_key`.
 
@@ -831,7 +822,7 @@ AFPS does not define prompt templating, state persistence, scheduling, or transp
 
 `timeout` is a numeric hint expressed in seconds. It communicates the producer's expectation of how long the agent needs to complete.
 
-AFPS v0.2 does not impose a manifest-level default for this field. If a consumer chooses a local default, it SHOULD document it separately from the manifest itself.
+AFPS v0.3 does not impose a manifest-level default for this field. If a consumer chooses a local default, it SHOULD document it separately from the manifest itself.
 
 ## 7. Integration Authentication
 
@@ -1216,7 +1207,7 @@ AFPS adopts the Model Context Protocol `_meta` key convention as its single exte
   "name": "@example/my-agent",
   "version": "1.0.0",
   "type": "agent",
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "_meta": {
     "dev.afps/policy": { "tier": "high" },
     "com.example/cost-center": { "id": "engineering" }
@@ -1308,7 +1299,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `screenshots` | all manifests | string[] | MAY | image paths/URIs | none |
 | `privacy_policies` | all manifests | string[] | MAY | privacy-policy URIs | none |
 | `compatibility` | all manifests | object | MAY | `{ platforms?, runtimes?, clients? }` | none |
-| `schema_version` | all manifests | string | MUST for agent; MAY for skill, mcp-server, integration | `MAJOR.MINOR`; producers MUST emit `0.2` | none |
+| `schema_version` | all manifests | string | MUST for agent; MAY for skill, mcp-server, integration | `MAJOR.MINOR`; producers MUST emit `0.3` | none |
 | `dependencies` | all manifests | object | MAY | optional dependency maps (§4.1) | none |
 | `dependencies.skills` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
 | `dependencies.mcp_servers` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
@@ -1321,8 +1312,6 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `input.schema` | agent | object | MUST if `input` present | AFPS schema object | none |
 | `output` | agent | object | MAY | per-run result; requires `schema` child | none |
 | `output.schema` | agent | object | MUST if `output` present | AFPS schema object | none |
-| `config` | agent | object | MAY | per-deployment settings; requires `schema` child | none |
-| `config.schema` | agent | object | MUST if `config` present | AFPS schema object | none |
 | `file_constraints` | agent schema wrapper | object | MAY | keyed by property name; `accept`, `max_size` | none |
 | `ui_hints` | agent schema wrapper | object | MAY | keyed by property name; `placeholder` | none |
 | `property_order` | agent schema wrapper | string[] | MAY | presentation order hint | none |
@@ -1419,7 +1408,7 @@ Semantic-version and range validation are delegated to semver parsing functions 
 
 ### Appendix C. Default Values
 
-AFPS v0.2 validation does not inject manifest defaults. Omitted optional fields remain omitted.
+AFPS v0.3 validation does not inject manifest defaults. Omitted optional fields remain omitted.
 
 Common consumer-side defaults observed in interoperable implementations include:
 
@@ -1430,7 +1419,7 @@ Common consumer-side defaults observed in interoperable implementations include:
 | `auths.<key>.delivery.files.<path>.mode` | `0400` | octal string |
 | `auths.<key>.connect.login.success_criteria` | HTTP 2xx | when omitted |
 | `manifest_version` | `0.3` | mcp-server MCPB baseline |
-| `schema_version` | `0.2` | common consumer default for new agents/integrations |
+| `schema_version` | `0.3` | common consumer default for new agents/integrations |
 | `timeout` | `300` | common consumer default for new agents |
 
 These defaults are non-normative unless a producer explicitly writes them into the manifest.

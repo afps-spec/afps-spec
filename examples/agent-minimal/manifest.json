@@ -3,7 +3,7 @@
   "name": "@example/minimal-agent",
   "version": "1.0.0",
   "type": "agent",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "display_name": "Minimal Agent",
   "author": "AFPS Examples",
   "dependencies": {}

@@ -3,7 +3,7 @@
   "$id": "https://schemas.afps.dev/v0/agent.schema.json",
   "$comment": "SPDX-License-Identifier: Apache-2.0 — Copyright (c) 2026 AFPS contributors",
   "title": "AFPS Agent Manifest",
-  "description": "Manifest schema for AFPS 0.2 agent packages. An agent declares dependencies, input/output/config schemas, a timeout hint, and per-integration configuration.",
+  "description": "Manifest schema for AFPS 0.3 agent packages. An agent declares dependencies, input/output schemas, a timeout hint, and per-integration configuration.",
   "type": "object",
   "properties": {
     "name": {
@@ -354,88 +354,6 @@
       "additionalProperties": false
     },
     "output": {
-      "type": "object",
-      "properties": {
-        "schema": {
-          "allOf": [
-            {
-              "$ref": "https://json-schema.org/draft/2020-12/schema"
-            },
-            {
-              "type": "object",
-              "required": [
-                "type",
-                "properties"
-              ],
-              "properties": {
-                "type": {
-                  "const": "object"
-                }
-              }
-            }
-          ]
-        },
-        "file_constraints": {
-          "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {
-            "type": "object",
-            "properties": {
-              "accept": {
-                "type": "string"
-              },
-              "max_size": {
-                "type": "number",
-                "exclusiveMinimum": 0
-              }
-            },
-            "additionalProperties": {}
-          }
-        },
-        "ui_hints": {
-          "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {
-            "type": "object",
-            "properties": {
-              "placeholder": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": {}
-          }
-        },
-        "property_order": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "_meta": {
-          "type": "object",
-          "propertyNames": {
-            "type": "string",
-            "pattern": "^(?!(?:mcp|modelcontextprotocol)(?:[./]|$))(?:[a-z0-9-]+(?:\\.[a-z0-9-]+)+\\/)?[A-Za-z0-9._-]+$"
-          },
-          "additionalProperties": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {}
-          }
-        }
-      },
-      "required": [
-        "schema"
-      ],
-      "additionalProperties": false
-    },
-    "config": {
       "type": "object",
       "properties": {
         "schema": {

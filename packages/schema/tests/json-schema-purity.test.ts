@@ -2,7 +2,7 @@
  * Validates that AFPS schemas produce 100% standard JSON Schema 2020-12.
  *
  * These tests ensure no non-standard keywords leak into the `schema` object
- * of input/output/config sections. Non-schema metadata (fileConstraints,
+ * of input/output sections. Non-schema metadata (fileConstraints,
  * uiHints, propertyOrder) must live at the wrapper level only.
  */
 

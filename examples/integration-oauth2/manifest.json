@@ -3,7 +3,7 @@
   "name": "@example/gmail",
   "version": "1.0.0",
   "type": "integration",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "display_name": "Gmail",
   "description": "Email service connector using OAuth2.",
   "keywords": ["email", "productivity"],

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3 — 2026-08-21
+
+### Removed
+
+- `agent.config` — an agent's parameters are now declared in `input`. Whether a
+  value is asked on every run or persisted at setup is a consumer concern, not a
+  format concern. A 0.2 manifest carrying `config` remains valid per §3 (unknown
+  top-level fields are allowed and SHOULD be preserved) but is no longer described
+  by this specification.
+
 ## Schema `@afps-spec/schema@0.6.1` — 2026-06-08
 
 Editorial change (no validation semantics change — every manifest valid under
