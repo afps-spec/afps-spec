@@ -2,9 +2,9 @@
 // Copyright (c) 2026 AFPS contributors
 
 /**
- * AFPS 0.2 — Zod schemas for the four package types.
+ * AFPS 0.3 — Zod schemas for the four package types.
  *
- * AFPS 0.2 uses a snake_case field vocabulary and defines four package types:
+ * AFPS 0.3 uses a snake_case field vocabulary and defines four package types:
  *   - agent       (§3.2)
  *   - skill        (§3.3)
  *   - mcp-server   (§3.4) — AFPS-native at root, adopts MCPB vocabulary for server/tools/user_config
@@ -42,7 +42,7 @@ export const scopedName = z.string().regex(SCOPED_NAME_REGEX, {
   error: "Must follow @scope/name format",
 });
 
-/** The four AFPS 0.2 package types (§2.1). `tool` and `provider` are removed. */
+/** The four AFPS 0.3 package types (§2.1). `tool` and `provider` are removed. */
 export const packageTypeEnum = z.enum(["agent", "skill", "mcp-server", "integration"]);
 
 const semverVersion = z.string().refine((v) => semver.valid(v) !== null, {

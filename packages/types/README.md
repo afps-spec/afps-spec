@@ -1,6 +1,6 @@
 # @afps-spec/types
 
-TypeScript bindings for AFPS 0.1 contracts.
+TypeScript bindings for AFPS 0.3 contracts.
 
 This package is the canonical TS projection of the language-agnostic
 AFPS specification (see [`afps-spec/spec.md`](https://github.com/afps-spec/afps-spec/blob/main/spec.md)).

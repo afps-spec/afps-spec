@@ -263,7 +263,7 @@ When a consumer encounters a manifest whose `schema_version` has a higher MAJOR 
 
 When a consumer encounters a manifest whose `schema_version` has the same MAJOR number but a higher MINOR number than the highest version it supports, it SHOULD process the manifest on a best-effort basis. Unknown fields SHOULD be preserved. Consumers MAY emit a warning indicating that some fields may not be fully understood.
 
-When `schema_version` is absent from a `skill`, `mcp-server`, or `integration` manifest (where the field is optional), consumers SHOULD treat the package as targeting schema version `0.2`.
+When `schema_version` is absent from a `skill`, `mcp-server`, or `integration` manifest (where the field is optional), consumers SHOULD treat the package as targeting schema version `0.3`.
 
 ### 2.5 Package Archive Format
 
@@ -791,14 +791,14 @@ The wrapper object is required when any of these sections are present. A bare sc
 - **Description**: Presentation hint for property ordering. Listed properties SHOULD be rendered first, in the given order. Properties present in `properties` but absent from `property_order` SHOULD be appended after the listed ones, in their natural object-key order.
 - **Example**: `["query", "attachments", "priority"]`
 
-Although the two sections share the same structural format, they have distinct semantics and lifecycles:
+Although the two sections share the same structural format, they differ in direction: `input` is supplied to the agent, `output` is produced by it.
 
-| Section | Lifecycle | Timing | Description |
-| --- | --- | --- | --- |
-| `input` | Per-run | Supplied each time the agent runs | Data the user provides for a specific run (e.g., a search query, a file to process). |
-| `output` | Per-run | Produced at the end of each run | Structured result the agent returns (e.g., a summary, a report). |
+| Section | Direction | Description |
+| --- | --- | --- |
+| `input` | Supplied to the agent at the start of a run | Data the agent needs to do its work (e.g., a search query, a file to process). |
+| `output` | Produced by the agent at the end of a run | Structured result the agent returns (e.g., a summary, a report). |
 
-A consumer SHOULD prompt for `input` values at each run.
+A consumer SHOULD prompt for `input` values it does not already have, and MAY persist them across runs — a value that is stable for a deployment need not be re-entered on each run. A property's `default` (§5.1) declares a value the producer considers usable as-is; a consumer MAY apply it without prompting.
 
 ## 6. Execution Model
 

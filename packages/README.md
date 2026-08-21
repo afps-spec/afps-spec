@@ -5,8 +5,8 @@ npm under the `@afps-spec` scope. Only spec-level contracts live here.
 
 | Package                                  | Scope                                                                 |
 | ---------------------------------------- | --------------------------------------------------------------------- |
-| [`schema`](./schema)                     | Zod + JSON Schema definitions for AFPS 0.1 manifests                  |
-| [`types`](./types)                       | TS bindings for AFPS 0.1 contracts (Tool, RunEvent, refs)             |
+| [`schema`](./schema)                     | Zod + JSON Schema definitions for AFPS 0.3 manifests                  |
+| [`types`](./types)                       | TS bindings for AFPS 0.3 contracts (Tool, RunEvent, refs)             |
 
 Both publish to npm as `@afps-spec/<package>@<version>`. Release is
 tag-driven: `afps-<package>@<version>` (e.g. `afps-types@0.1.0`,

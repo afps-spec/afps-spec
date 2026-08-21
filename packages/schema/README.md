@@ -77,7 +77,7 @@ Reference a schema using `$schema` for editor validation:
 ```json
 {
   "$schema": "https://schemas.afps.dev/v0/agent.schema.json",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "name": "@scope/my-agent",
   "version": "1.0.0",
   "type": "agent"
