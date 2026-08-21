@@ -65,9 +65,6 @@ const validAgent = {
   output: {
     schema: { type: "object", properties: { summary: { type: "string" } } },
   },
-  config: {
-    schema: { type: "object", properties: { language: { type: "string", default: "fr" } } },
-  },
   timeout: 300,
   _meta: { "dev.afps/policy": { tier: "high" } },
 };
@@ -461,7 +458,7 @@ describe("dependencies (§4)", () => {
 });
 
 // ─────────────────────────────────────────────
-// §5 — Schema system (input/output/config)
+// §5 — Schema system (input/output)
 // ─────────────────────────────────────────────
 
 describe("schema system (§5)", () => {
@@ -504,16 +501,35 @@ describe("schema system (§5)", () => {
     });
   });
 
-  test("output and config wrappers work identically", () => {
+  test("output wrapper works identically to input", () => {
     const block = { schema: { type: "object", properties: { result: { type: "string" } } } };
+    expectValid(agentManifestSchema, { ...base, input: block });
     expectValid(agentManifestSchema, { ...base, output: block });
-    expectValid(agentManifestSchema, { ...base, config: block });
   });
 
   test("wrapper without schema child is rejected", () => {
     expectInvalid(agentManifestSchema, { ...base, input: {} });
     expectInvalid(agentManifestSchema, { ...base, output: {} });
-    expectInvalid(agentManifestSchema, { ...base, config: {} });
+  });
+
+  // 0.3 removed the agent `config` wrapper (§3.2): an agent's parameters are
+  // now declared in `input`. No normative migration clause was written, so the
+  // only thing keeping already-published 0.2 packages validating is §3 —
+  // unknown top-level fields are allowed by the validation model and SHOULD be
+  // preserved, which `agentManifestObjectSchema` implements as a
+  // `z.looseObject`. That tolerance is deliberate and load-bearing: switching
+  // the agent manifest to a strict object would silently invalidate every 0.2
+  // manifest in the wild. This test pins it.
+  test("tolerates a legacy 0.2 `config` block as an unknown field", () => {
+    expectValid(agentManifestSchema, {
+      ...base,
+      config: {
+        schema: {
+          type: "object",
+          properties: { language: { type: "string", default: "fr" } },
+        },
+      },
+    });
   });
 
   test("non-canonical camelCase wrapper keys are not standard metadata", () => {

@@ -17,7 +17,7 @@ const myAgentSchema = agentManifestSchema.extend({
 
 ### JSON Schema generation
 
-When generating JSON Schema files from AFPS Zod schemas, use the exported `afpsJsonSchemaOverride` to ensure `input.schema`, `output.schema`, and `config.schema` fields reference the official JSON Schema 2020-12 meta-schema:
+When generating JSON Schema files from AFPS Zod schemas, use the exported `afpsJsonSchemaOverride` to ensure the `input.schema` and `output.schema` fields reference the official JSON Schema 2020-12 meta-schema:
 
 ```typescript
 import { toJSONSchema } from "zod/v4/core";
@@ -55,7 +55,7 @@ The `mcp-server.schema.json` validates the MCP Bundle (MCPB) manifest a built `m
 
 ## Schema validation
 
-AFPS schema fields (`input.schema`, `output.schema`, `config.schema`) accept any valid JSON Schema 2020-12 document, with two AFPS-specific constraints:
+AFPS schema fields (`input.schema`, `output.schema`) accept any valid JSON Schema 2020-12 document, with two AFPS-specific constraints:
 
 - The root `type` MUST be `"object"`
 - The root MUST have a `properties` key
@@ -77,7 +77,7 @@ Reference a schema using `$schema` for editor validation:
 ```json
 {
   "$schema": "https://schemas.afps.dev/v0/agent.schema.json",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "name": "@scope/my-agent",
   "version": "1.0.0",
   "type": "agent"

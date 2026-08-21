@@ -1,7 +1,7 @@
 {
   "name": "@afps-spec/types",
   "version": "0.1.0",
-  "description": "TypeScript bindings for AFPS 0.1 contracts — Tool protocol, manifest refs, and the RunEvent wire envelope.",
+  "description": "TypeScript bindings for AFPS 0.3 contracts — Tool protocol, manifest refs, and the RunEvent wire envelope.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",

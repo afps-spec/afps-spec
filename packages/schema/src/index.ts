@@ -2,7 +2,7 @@
 // Copyright (c) 2026 AFPS contributors
 
 /**
- * @afps-spec/schema — AFPS 0.2 Zod schemas for manifest validation.
+ * @afps-spec/schema — AFPS 0.3 Zod schemas for manifest validation.
  *
  * Default exports are AFPS v0 schemas. Use createSchemas(majorVersion)
  * to generate schemas for a specific version.

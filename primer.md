@@ -36,7 +36,7 @@ Agent Skills (Anthropic / AAIF) and MCP servers define capabilities. AFPS define
 
 An agent's `prompt.md` replaces what a human would type to give an agent its objective. The agent manifest declares which skills, MCP servers, and integrations the agent needs to fulfill that objective. AFPS packages everything together into a versioned, distributable `.afps` artifact (a standard ZIP file).
 
-MCP standardizes how an agent invokes tools at runtime. A2A standardizes how agents discover and communicate with each other. Agent Skills standardize reusable capability descriptions. MCPB standardizes how a local MCP server is packaged — and an AFPS `mcp-server` manifest adopts the MCPB field vocabulary (`server`, `tools`, `user_config`, `manifest_version`) at the root alongside AFPS-native fields. The full AFPS manifest is *not* a strict MCPB manifest and is not promised to install in an MCPB host as-is in 0.2; a publish-time projection to a strict MCPB bundle is reserved for a future minor. AFPS standardizes the goal and its dependencies — the package that gets published, installed, and composed before any of that happens. They are complementary.
+MCP standardizes how an agent invokes tools at runtime. A2A standardizes how agents discover and communicate with each other. Agent Skills standardize reusable capability descriptions. MCPB standardizes how a local MCP server is packaged — and an AFPS `mcp-server` manifest adopts the MCPB field vocabulary (`server`, `tools`, `user_config`, `manifest_version`) at the root alongside AFPS-native fields. The full AFPS manifest is *not* a strict MCPB manifest and is not promised to install in an MCPB host as-is in 0.3; a publish-time projection to a strict MCPB bundle is reserved for a future minor. AFPS standardizes the goal and its dependencies — the package that gets published, installed, and composed before any of that happens. They are complementary.
 
 AFPS is transport-agnostic: it does not prescribe how packages are fetched, transferred, or cached.
 
@@ -50,7 +50,7 @@ An agent is a complete AI workflow — the primary unit of execution. It represe
 
 An agent execution is **non-interactive and run-to-completion**: the agent receives the objective, processes the task autonomously, and returns a structured result. There is no conversational back-and-forth — the agent runs from start to finish without user interaction.
 
-Think of it like a `docker-compose.yml` for AI agents — it declares the goal, the dependencies, the inputs, the outputs, the configuration, and execution hints, all in one portable artifact. Where a skill says "I know how to rewrite text professionally", an agent says "process these emails and create a summary" — and lists the skills, MCP servers, and integrations needed to do it.
+Think of it like a `docker-compose.yml` for AI agents — it declares the goal, the dependencies, the inputs, the outputs, and execution hints, all in one portable artifact. Where a skill says "I know how to rewrite text professionally", an agent says "process these emails and create a summary" — and lists the skills, MCP servers, and integrations needed to do it.
 
 **Minimal example** (`manifest.json`):
 
@@ -59,7 +59,7 @@ Think of it like a `docker-compose.yml` for AI agents — it declares the goal, 
   "name": "@acme/customer-intake",
   "version": "1.0.0",
   "type": "agent",
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "display_name": "Customer Intake",
   "author": "Acme Corp",
   "dependencies": {
@@ -140,7 +140,7 @@ An AFPS `mcp-server` manifest is AFPS-native at the root (scoped `name`, `type`,
   "name": "@acme/fetch-json",
   "version": "1.0.0",
   "type": "mcp-server",
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "manifest_version": "0.3",
   "display_name": "Fetch JSON",
   "description": "Fetch JSON from a URL and return the parsed response.",
@@ -175,7 +175,7 @@ An integration is a credentialed binding to an external service — it describes
   "name": "@acme/openai",
   "version": "1.0.0",
   "type": "integration",
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "display_name": "OpenAI",
   "source": { "kind": "none" },
   "auths": {
@@ -301,11 +301,10 @@ See [spec.md, Section 4.1](./spec.md#41-dependency-declaration).
 
 ### Schema system
 
-AFPS describes three distinct sections in an agent manifest with JSON Schema. Although they share the same wrapper format, they serve different purposes:
+AFPS describes two distinct sections in an agent manifest with JSON Schema. Although they share the same wrapper format, they serve different purposes:
 
 - **`input`** — per-run data, supplied each time the agent runs (e.g., a search query, a file to process). Consumers should prompt for these values at each run.
 - **`output`** — per-run result, produced at the end of each run (e.g., a summary, a report). Consumers may use this to validate the language model's response.
-- **`config`** — per-deployment settings, configured once and reused across runs (e.g., preferred language, notification threshold). Consumers should persist these values.
 
 Each section is a wrapper with a required `schema` member (a full JSON Schema 2020-12 object whose container is `type: "object"` with a `properties` map) plus optional AFPS metadata (`ui_hints`, `property_order`, `file_constraints`):
 
@@ -328,19 +327,6 @@ Each section is a wrapper with a required `schema` member (a full JSON Schema 20
     },
     "ui_hints": {
       "query": { "placeholder": "label:inbox newer_than:7d" }
-    }
-  },
-  "config": {
-    "schema": {
-      "type": "object",
-      "properties": {
-        "language": {
-          "type": "string",
-          "description": "Output language",
-          "default": "fr",
-          "enum": ["fr", "en", "es"]
-        }
-      }
     }
   }
 }
@@ -375,7 +361,7 @@ AFPS manifests are extensible. Unknown fields are preserved by consumers rather 
 {
   "name": "@acme/my-agent",
   "type": "agent",
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "_meta": {
     "dev.afps/policy": { "tier": "high" },
     "dev.acme/cost-center": { "code": "eng-42" }
@@ -407,7 +393,7 @@ AFPS is a packaging standard. It defines the artifact — the ZIP file, the mani
 
 ## Further reading
 
-- [Full specification](./spec.md) — the normative AFPS v0.2 draft
+- [Full specification](./spec.md) — the normative AFPS v0.3 draft
 - [Governance](./GOVERNANCE.md) — how the specification evolves
 - [Changelog](./CHANGELOG.md) — specification history
 

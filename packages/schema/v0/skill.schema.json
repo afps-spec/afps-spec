@@ -3,7 +3,7 @@
   "$id": "https://schemas.afps.dev/v0/skill.schema.json",
   "$comment": "SPDX-License-Identifier: Apache-2.0 — Copyright (c) 2026 AFPS contributors",
   "title": "AFPS Skill Manifest",
-  "description": "Manifest schema for AFPS 0.2 skill packages. A skill is a superset of the Agent Skills format with package identity and versioning.",
+  "description": "Manifest schema for AFPS 0.3 skill packages. A skill is a superset of the Agent Skills format with package identity and versioning.",
   "type": "object",
   "properties": {
     "name": {

@@ -3,7 +3,7 @@
   "name": "@example/fetch-json",
   "version": "1.0.0",
   "type": "mcp-server",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "manifest_version": "0.3",
   "display_name": "Fetch JSON",
   "description": "Fetch JSON from a URL and return the parsed response.",

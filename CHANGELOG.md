@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.3 — 2026-08-21
+
+### Removed
+
+- `agent.config` — an agent's parameters are now declared in `input`. Whether a
+  value is asked on every run or persisted at setup is a consumer concern, not a
+  format concern. A 0.2 manifest carrying `config` remains valid per §3 (unknown
+  top-level fields are allowed and SHOULD be preserved) but is no longer described
+  by this specification.
+
+## Schema `@afps-spec/schema@0.7.0` — 2026-08-21
+
+Breaking schema change (tracks the spec 0.3 removal above).
+
+- Removed `agent.config` from `agentManifestObjectSchema`, and with it the
+  `config` property of the generated `v0/agent.schema.json`. `schemaWrapper` is
+  unchanged — `input` and `output` still use it. TypeScript consumers reading
+  `config` off the exported agent manifest type will no longer compile.
+- The agent manifest remains a `z.looseObject` (§3): a 0.2 manifest that still
+  carries a `config` block validates as an unknown top-level field rather than
+  being rejected. A conformance test pins that tolerance.
+
 ## Schema `@afps-spec/schema@0.6.1` — 2026-06-08
 
 Editorial change (no validation semantics change — every manifest valid under

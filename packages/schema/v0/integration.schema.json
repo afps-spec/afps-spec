@@ -3,7 +3,7 @@
   "$id": "https://schemas.afps.dev/v0/integration.schema.json",
   "$comment": "SPDX-License-Identifier: Apache-2.0 — Copyright (c) 2026 AFPS contributors",
   "title": "AFPS Integration Manifest",
-  "description": "Manifest schema for AFPS 0.2 integration packages. An integration declares a capability source, one or more authentication methods, and credential delivery.",
+  "description": "Manifest schema for AFPS 0.3 integration packages. An integration declares a capability source, one or more authentication methods, and credential delivery.",
   "type": "object",
   "properties": {
     "name": {

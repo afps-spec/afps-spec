@@ -1,6 +1,6 @@
 # Agent Format Packaging Standard (AFPS)
 
-![AFPS v0.2](https://img.shields.io/badge/AFPS-v0.2-blue)
+![AFPS v0.3](https://img.shields.io/badge/AFPS-v0.3-blue)
 
 AFPS is an open specification for declaring portable AI workflow packages.
 It standardizes how agents, skills, MCP servers, and integrations are described, versioned, and distributed.
@@ -59,7 +59,7 @@ Peer packaging formats and AFPS's relation to each:
 ```
 
 - **MCP** defines runtime tool invocation. AFPS does not define tool-calling transport; a runtime MAY choose to expose AFPS capabilities via MCP.
-- **MCPB** defines how a local MCP server is packaged. An AFPS `mcp-server` manifest adopts the MCPB field vocabulary (`server`, `tools`, `user_config`, `manifest_version`) at the root alongside AFPS-native fields. Strict-MCPB host interoperability is not promised at 0.2; a publish-time projection is reserved for a future minor.
+- **MCPB** defines how a local MCP server is packaged. An AFPS `mcp-server` manifest adopts the MCPB field vocabulary (`server`, `tools`, `user_config`, `manifest_version`) at the root alongside AFPS-native fields. Strict-MCPB host interoperability is not promised at 0.3; a publish-time projection is reserved for a future minor.
 - **Agent Skills** defines reusable capabilities (`SKILL.md`). AFPS skill packages are a strict superset: a valid Agent Skill directory becomes an AFPS skill when a `manifest.json` is added. The `SKILL.md` format, frontmatter fields, and optional directories (`scripts/`, `references/`, `assets/`) are preserved unchanged. AFPS adds identity, versioning, and dependency resolution.
 - **A2A** defines inter-agent communication. AFPS does not compete — A2A metadata can be added via the `_meta` extension mechanism.
 
@@ -75,7 +75,7 @@ Create a minimal agent package with two files:
   "name": "@my-org/hello-world",
   "version": "1.0.0",
   "type": "agent",
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "display_name": "Hello World",
   "author": "My Org",
   "dependencies": {}
@@ -134,12 +134,12 @@ Each box is one published `.afps` archive. See the [primer](./primer.md) for a w
 
 ## Repository Contents
 
-- [spec.md](./spec.md) — the AFPS v0.2 draft specification
+- [spec.md](./spec.md) — the AFPS v0.3 draft specification
 - [primer.md](./primer.md) — non-normative introduction for newcomers
 - [examples/](./examples/) — minimal and full package examples (agent, skill, mcp-server, integration)
 - [packages/](./packages/) — reference TS artefacts published to npm under `@afps-spec/*`
   - [packages/schema/](./packages/schema/) — JSON Schema + Zod (see [README](./packages/schema/README.md))
-  - [packages/types/](./packages/types/) — TS bindings for AFPS 0.2 contracts
+  - [packages/types/](./packages/types/) — TS bindings for AFPS 0.3 contracts
 - [GOVERNANCE.md](./GOVERNANCE.md) — change process and stewardship
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — how to contribute
 - [CHANGELOG.md](./CHANGELOG.md) — specification history
@@ -151,7 +151,7 @@ AFPS defines:
 - Package identity with scoped names and semantic versions
 - Manifest fields for `agent`, `skill`, `mcp-server`, and `integration`
 - A dependency model with semver ranges and separate per-integration configuration (tool selection, requested OAuth scopes)
-- A JSON Schema 2020-12 based schema system for input, output, and config
+- A JSON Schema 2020-12 based schema system for input and output
 - ZIP package structure for distribution
 - Integration authentication metadata: OAuth 2.0 / OIDC discovery, credential schema, credential delivery (`http` / `env` / `files`), declarative credential acquisition (`connect`), per-tool policy, URI restrictions, and setup-guide hints
 

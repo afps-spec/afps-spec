@@ -3,7 +3,7 @@
   "name": "@example/fetch-json-authenticated",
   "version": "1.0.0",
   "type": "integration",
-  "schema_version": "0.1",
+  "schema_version": "0.3",
   "display_name": "Fetch JSON (authenticated)",
   "description": "Credentialed binding over the @example/fetch-json MCP server: the integration applies an API key on top of the local server via environment-variable delivery.",
   "keywords": ["http", "api"],
