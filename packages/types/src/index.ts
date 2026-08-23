@@ -112,13 +112,30 @@ export interface ToolResult {
  * is an open index signature so tools — including third-party tools —
  * can carry whatever data they need without amending the spec.
  *
- * Reserved `type` namespaces for core AFPS packages:
- *   - memory.*   (@afps/memory)
- *   - state.*    (@afps/state)
- *   - output.*   (@afps/output)
- *   - report.*   (@afps/report)
- *   - log.*      (@afps/log)
- *   - integration.* (integration-backed tool implementations)
+ * ## Reservations bind namespaces, not shapes
+ *
+ * A reserved namespace says who may choose a `type` string under it. It says
+ * nothing about the payload that travels with it: AFPS constrains no field
+ * beyond the envelope, by design, which is what the open index signature above
+ * expresses. An implementation MUST NOT read a reservation as licence to
+ * publish a normative payload schema for the namespace under an AFPS-owned
+ * host — that is a specification change, and it goes through
+ * `GOVERNANCE.md`.
+ *
+ * ## Reserved `type` namespaces for core AFPS packages
+ *
+ *   - `memory.*`      (`@afps/memory`)
+ *   - `pinned.*`      (`@afps/pin`)
+ *   - `output.*`      (`@afps/output`)
+ *   - `log.*`         (`@afps/log`)
+ *   - `integration.*` (integration-backed tool implementations)
+ *   - `state.*`       (`@afps/state`) — reserved, currently unused
+ *   - `report.*`      (`@afps/report`) — reserved, retired in the reference
+ *     implementation
+ *
+ * The last two stay reserved rather than being struck: freeing a namespace
+ * lets a later tool claim a string an older consumer may still route on, which
+ * is a compatibility change, not an editorial one.
  *
  * Third-party tools SHOULD use their own namespace (e.g. "@my-org/audit.*").
  */
