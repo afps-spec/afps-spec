@@ -1,5 +1,54 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-09-30
+
+Normative changes to the 0.3 draft (no spec-version bump; `0.x` makes no
+back-compat promise). No schema change: `@afps-spec/schema` types
+`authorized_uris` as `string[]`, `identity_claims` as a string map and value
+templates / runtime expressions as strings without constraining their grammar,
+so every manifest keeps its schema validation result; the rules below are
+enforced by consumers.
+
+### Added
+
+- §7.9 credential templates in `authorized_uris`: `{$credential.<field>}`
+  placeholders in the authority of a `scheme://` entry
+  (`https://{$credential.host}/**`), or one placeholder heading a URL-form entry
+  (`{$credential.webhook_url}`, `{$credential.base_url}/v1/**`). Fields MUST be
+  required `credentials.schema` properties; forbidden on `oauth2` auths and on
+  auths declaring `connect`. Values are literals (host charset, or an absolute
+  http(s) URL without userinfo, fragment or `*`); an unrenderable entry is
+  dropped, and a declared list that renders to nothing refuses every call.
+  Matching uses the rendered list. §8.6: a rendered host never gets the trust of
+  an author-declared one.
+
+### Changed
+
+- §7.4 `identity_claims` values are JSONPath queries into the identity document
+  (`{ "account_id": "$.sub" }`), not bare claim names. A manifest using the
+  previous example form (`"sub"`) no longer conforms.
+- §7.7 every manifest JSONPath (Selector `selector`, `jsonpath` Criterion
+  `condition`, `identity_claims`) MUST be an RFC 9535 absolute singular query
+  (§2.3.5.1); wildcards, slices, filters, unions and descendant segments are
+  rejected. A `jsonpath` Criterion is met when its query selects a value other
+  than `null`, `""` or `[]`.
+- **Breaking:** one template grammar. §7.6/§7.7 value templates reference
+  credential fields only, as `{$credential.<field>}`; `{$outputs.<name>}` is
+  removed and any other `{$…}` expression MUST be rejected. A `connect` auth's
+  outputs are its credential fields (`{$credential.<output>}`), including the
+  `jwt` extractor `token` (a non-`jwt` output). The regex extractor `source` is a
+  bare expression (`$response.body` or `$response.header.<name>`, no braces);
+  `$response.body` joins the Arazzo expression list and `$outputs.{name}` leaves
+  it. `connect.login.request` substitutes `{{<name>}}` from the user-supplied
+  credential fields and evaluates no `{$…}`; an unresolved placeholder fails the
+  login. Manifests using `{$outputs.*}` or a braced `source` must be rewritten.
+- **Breaking:** §7.9/§8.6 an auth method that injects its credential into HTTP
+  requests (`delivery.http`, or `type` `oauth2` / `api_key` / `basic`) MUST NOT
+  set `allow_all_uris: true` nor declare an `authorized_uris` entry that leaves
+  the host to the caller (a wildcard in either of the host's last two labels, or
+  a wildcard entry without `scheme://`). Consumers reject such a manifest when it
+  is published or saved and refuse its credentialed requests at run time.
+
 ## v0.3 — 2026-08-21
 
 ### Removed
