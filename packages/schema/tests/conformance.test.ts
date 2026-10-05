@@ -903,7 +903,7 @@ describe("integration auth methods (§7.2 – §7.5)", () => {
           authorization_params: { access_type: "offline" },
           default_scopes: ["read"],
           scope_catalog: [{ value: "read", label: "Read", description: "Read access", implies: ["r"] }],
-          identity_claims: { account_id: "sub", email: "email" },
+          identity_claims: { account_id: "$.sub", email: "$.email" },
           required_identity_claims: ["sub"],
           delivery: { http: { in: "header", name: "Authorization", value: "{$credential.t}" } },
         },
@@ -1102,14 +1102,14 @@ describe("connect (§7.7)", () => {
               outputs: {
                 token: "$response.body#/access_token",
                 csrf: { from: "cookie", name: "XSRF-TOKEN" },
-                sub: { from: "jwt", token: "{$outputs.token}", path: "/sub" },
+                sub: { from: "jwt", token: "{$credential.token}", path: "/sub" },
               },
               expires_in_output: "exp",
               identity_outputs: ["sub"],
             },
             limits: { request_timeout_ms: 30000, max_response_bytes: 5000000 },
           },
-          delivery: { env: { TOKEN: { value: "{$outputs.token}", sensitive: true } } },
+          delivery: { env: { TOKEN: { value: "{$credential.token}", sensitive: true } } },
         },
       },
     });
@@ -1169,7 +1169,7 @@ describe("connect (§7.7)", () => {
             outputs: { x: output },
           },
         },
-        delivery: { env: { TOKEN: { value: "{$outputs.x}", sensitive: true } } },
+        delivery: { env: { TOKEN: { value: "{$credential.x}", sensitive: true } } },
       },
     },
   });
@@ -1181,20 +1181,20 @@ describe("connect (§7.7)", () => {
   test("connect.login.outputs accepts jwt extractor with token + path", () => {
     expectValid(
       integrationManifestSchema,
-      withOutput({ from: "jwt", token: "{$outputs.access}", path: "/sub" }),
+      withOutput({ from: "jwt", token: "{$credential.access}", path: "/sub" }),
     );
   });
 
   test("connect.login.outputs accepts regex extractor with source + pattern (+ optional group)", () => {
     expectValid(
       integrationManifestSchema,
-      withOutput({ from: "regex", source: "{$response.body}", pattern: "token=([a-z]+)" }),
+      withOutput({ from: "regex", source: "$response.body", pattern: "token=([a-z]+)" }),
     );
     expectValid(
       integrationManifestSchema,
       withOutput({
         from: "regex",
-        source: "{$response.body}",
+        source: "$response.body",
         pattern: "token=([a-z]+)",
         group: 1,
       }),
@@ -1212,7 +1212,7 @@ describe("connect (§7.7)", () => {
 
   test("connect.login.outputs rejects jwt extractor missing `token` or `path`", () => {
     expectInvalid(integrationManifestSchema, withOutput({ from: "jwt", path: "/sub" }));
-    expectInvalid(integrationManifestSchema, withOutput({ from: "jwt", token: "{$outputs.t}" }));
+    expectInvalid(integrationManifestSchema, withOutput({ from: "jwt", token: "{$credential.t}" }));
   });
 
   test("connect.login.outputs rejects regex extractor missing `source` or `pattern`", () => {

@@ -928,7 +928,7 @@ OAuth scopes are declared in two AFPS fields, distinct from the non-authoritativ
 
 #### Identity claims
 
-- `identity_claims` (object) — OPTIONAL; maps AFPS identity keys to OIDC claim names, e.g. `{ "account_id": "sub", "email": "email" }`.
+- `identity_claims` (object) — OPTIONAL; maps AFPS identity keys to JSONPath queries (§7.7) evaluated against the connection's identity document (for example, the token response or the `userinfo_endpoint` response), e.g. `{ "account_id": "$.sub", "email": "$.email" }`. A query that selects nothing yields no value for its key.
 - `required_identity_claims` (array of strings) — OPTIONAL; the OIDC claims that MUST be present on a resolved identity, e.g. `["sub"]`.
 
 ### 7.5 Credential Schema
@@ -983,7 +983,7 @@ The block below is a **syntax catalogue** showing all three delivery shapes; it 
 
 No specification standardizes runtime secret injection into environment variables and files; the `env`/`files` vocabulary borrows Kubernetes naming (`mode`, mount-style paths) and is an AFPS contribution.
 
-Value templates use the runtime-expression grammar of §7.7 (`{$credential.<field>}`, `{$outputs.<name>}`).
+Value templates reference the connection's credential fields as `{$credential.<field>}`; no other expression is rendered, and a consumer MUST reject a template carrying one. For an auth method with `connect` (§7.7), the credential fields are its declared outputs: output `<name>` is `{$credential.<name>}`.
 
 ### 7.7 Declarative Credential Acquisition (connect)
 
@@ -1015,7 +1015,7 @@ Value templates use the runtime-expression grammar of §7.7 (`{$credential.<fiel
       "exp":   "$response.header.X-Expires-After",
       "user":  { "context": "$response.body", "selector": "$.profile.id", "type": "jsonpath" },
       "csrf":  { "from": "cookie", "name": "XSRF-TOKEN" },
-      "sub":   { "from": "jwt", "token": "{$outputs.token}", "path": "/sub" }
+      "sub":   { "from": "jwt", "token": "{$credential.token}", "path": "/sub" }
     },
     "expires_in_output": "exp",
     "identity_outputs": ["sub"]
@@ -1024,22 +1024,24 @@ Value templates use the runtime-expression grammar of §7.7 (`{$credential.<fiel
 }
 ```
 
-- **`request`** — the inline HTTP request issued to obtain the credential. `content_type` selects the body encoding.
+- **`request`** — the inline HTTP request issued to obtain the credential. `content_type` selects the body encoding. `url`, header values, and `body` MAY carry `{{<name>}}` placeholders, each replaced by the user-supplied `credentials.schema` field `<name>` before the request is sent; an unresolved placeholder MUST fail the login. No `{$…}` expression is evaluated in the request.
 - **`success_criteria`** — an array of Arazzo Criterion objects (`condition`, optional `context`, optional `type` of `simple`/`regex`/`jsonpath`/`xpath`). When omitted, success is HTTP 2xx.
 - **`outputs`** — a map of named outputs. Each value is one of:
-  - an **Arazzo runtime-expression string** (Arazzo §5.9): `$statusCode`, `$response.body#/{json-pointer}` ([RFC 6901]), `$response.header.{name}`, `$outputs.{name}`;
-  - an **Arazzo Selector Object** (Arazzo 1.1 §5.8.13) with `{ context (runtime expression), selector (string), type ("jsonpath" | "xpath" | "jsonpointer") }`. Consumers MUST resolve `jsonpath` per [RFC 9535], `jsonpointer` per [RFC 6901], and `xpath` per [XML Path Language 3.1];
+  - an **Arazzo runtime-expression string** (Arazzo §5.9): `$statusCode`, `$response.body`, `$response.body#/{json-pointer}` ([RFC 6901]), `$response.header.{name}`;
+  - an **Arazzo Selector Object** (Arazzo 1.1 §5.8.13) with `{ context (runtime expression), selector (string), type ("jsonpath" | "xpath" | "jsonpointer") }`. Consumers MUST resolve `jsonpath` per [RFC 9535] (restricted to singular queries, see below), `jsonpointer` per [RFC 6901], and `xpath` per [XML Path Language 3.1];
   - an **AFPS extractor object** that extends Arazzo for cases the Selector Object cannot express:
     - `{ "from": "cookie", "name": "<cookie-name>" }`;
-    - `{ "from": "jwt", "token": "{$outputs.<name>}", "path": "/<json-pointer>" }`;
-    - `{ "from": "regex", "source": "{$response.body}", "pattern": "<regex>", "group": <n> }` — note: Arazzo expresses regular-expression matching only on the *assertion* side, via a Criterion with `type: "regex"` (Arazzo Criterion `type ∈ simple | regex | jsonpath | xpath`); the Arazzo Selector Object used on the *output* side does not offer a `regex` type (its `type ∈ jsonpath | xpath | jsonpointer`). AFPS therefore introduces `from: "regex"` as an output-side extractor with no direct Selector Object equivalent, spelled for symmetry with `cookie`/`jwt`.
+    - `{ "from": "jwt", "token": "{$credential.<name>}", "path": "/<json-pointer>" }`, where `<name>` is a declared output that is not itself a `jwt` extractor;
+    - `{ "from": "regex", "source": "$response.body", "pattern": "<regex>", "group": <n> }`, where `source` is `$response.body` or `$response.header.<name>` — note: Arazzo expresses regular-expression matching only on the *assertion* side, via a Criterion with `type: "regex"` (Arazzo Criterion `type ∈ simple | regex | jsonpath | xpath`); the Arazzo Selector Object used on the *output* side does not offer a `regex` type (its `type ∈ jsonpath | xpath | jsonpointer`). AFPS therefore introduces `from: "regex"` as an output-side extractor with no direct Selector Object equivalent, spelled for symmetry with `cookie`/`jwt`.
 - **`expires_in_output`** — the name of the output that carries credential expiry.
 - **`identity_outputs`** — the names of outputs that establish the connection identity.
 - **`limits`** — OPTIONAL request guardrails: `request_timeout_ms`, `max_response_bytes`.
 
-**Gating rule.** A `delivery.*` value template MAY only reference declared `connect` outputs (or, for the orchestrated `tool` mode, its declared `produces`). A delivery referencing a non-output — for example a bootstrap login secret — is a manifest error.
+**JSONPath.** Every JSONPath in an integration manifest — a `jsonpath` Selector Object `selector`, the `condition` of a `jsonpath` Criterion, and the values of `identity_claims` (§7.4) — MUST be an absolute singular query ([RFC 9535] §2.3.5.1): `$` followed only by name segments (`.name`, `['name']`) and index segments (`[0]`, `[-1]`), e.g. `$.profile.id`. Wildcards, slices, filters, unions, and descendant segments MUST NOT be used; consumers MUST reject a manifest that uses them. A `jsonpath` Criterion is met when its query selects a value other than `null`, an empty string, or an empty array.
 
-Runtime expressions are embedded into templates with `{$expr}` (for example `{$outputs.token}`). The grammar is adopted from [Arazzo]; the extractor objects (`from: jwt|regex|cookie`) are AFPS extensions.
+**Gating rule.** A `delivery.*` value template MAY only reference declared `connect` outputs, as `{$credential.<output>}` (or, for the orchestrated `tool` mode, its declared `produces`). A delivery referencing a non-output — for example a bootstrap login secret — is a manifest error.
+
+A value template embeds a credential field as `{$credential.<field>}` (for example `{$credential.token}`); the `connect.login` fields that name a part of the response (`context`, `source`, string outputs, criteria) are bare Arazzo runtime expressions. The runtime-expression grammar is adopted from [Arazzo]; the extractor objects (`from: jwt|regex|cookie`) are AFPS extensions.
 
 ### 7.8 Per-Tool Policy
 
@@ -1083,10 +1085,28 @@ When an agent picks an `oauth2` auth (via `integrations_configuration.<id>.auth_
 
 An auth method MAY restrict which upstream URIs the integration may send credentials to:
 
-- `authorized_uris` (array of strings) — allowed upstream URI patterns (glob `*`/`**`).
-- `allow_all_uris` (boolean) — explicit override permitting any upstream URI. When omitted, consumers resolve `allow_all_uris` as `false`.
+- `authorized_uris` (array of strings) — allowed upstream URI patterns (glob `*`/`**`). An entry MAY be a credential template (below).
+- `allow_all_uris` (boolean) — explicit override permitting any upstream URI, except for an auth method that injects its credential (below). When omitted, consumers resolve `allow_all_uris` as `false`.
 
 Consumers MUST NOT send credentials to URIs outside the authorized set unless `allow_all_uris` is explicitly `true`, and SHOULD treat `allow_all_uris: true` as security-sensitive (§8.6).
+
+An auth method that injects its credential into HTTP requests — one that declares `delivery.http`, or one of `type` `oauth2`, `api_key`, or `basic` — MUST NOT set `allow_all_uris: true`, and MUST NOT declare an `authorized_uris` entry that leaves the host to the caller: an entry with a wildcard in either of the host's last two labels (`https://**`, `https://*.com/**`, `https://example.*`), or a wildcard entry without a `scheme://` prefix. A host whose last two labels are literal (`https://*.example.com/**`), or that a credential template supplies (below), is bounded. Consumers MUST reject such a manifest when it is published or saved, and at run time MUST refuse every credentialed request of such an auth method whose `authorized_uris` is empty or contains such an entry, whatever `allow_all_uris` says.
+
+#### Credential templates
+
+An `authorized_uris` entry MAY reference the connection's own credential fields with `{$credential.<field>}` placeholders (§7.6), so that an integration whose upstream is chosen per connection (a self-hosted instance, a tenant host, a webhook URL) bounds its credential to that upstream instead of declaring a catch-all pattern. A templated entry MUST take one of two forms:
+
+- **Authority form** — the entry starts with `scheme://` and every placeholder lies in the authority (before the first `/`, `?`, or `#` that follows `://`), e.g. `https://{$credential.host}/**` or `ssh://{$credential.host}:{$credential.port}`.
+- **URL form** — the entry starts with exactly one placeholder, followed either by nothing (the *bare* form, e.g. `{$credential.webhook_url}`) or by a suffix that begins with `/` and contains no placeholder, e.g. `{$credential.base_url}/v1/**`.
+
+Every referenced field MUST be a property of `credentials.schema` (§7.5) listed in its `required`. Templated entries MUST NOT appear on an auth method of `type: "oauth2"` or on one that declares `connect` (§7.7). A consumer that implements credential templates MUST reject a manifest that violates these rules; one that does not MUST treat every templated entry as matching no URI.
+
+A consumer renders templated entries for each connection from that connection's credential values, and matches request URIs against the rendered list. A substituted value is a literal, never a pattern:
+
+- in the authority form, each value MUST consist only of ASCII letters, digits, `.`, and `-`, and MUST NOT consist only of dots;
+- in the URL form, the value MUST be an absolute URL with scheme `http` or `https`, a non-empty host, and no userinfo, fragment, empty query, or `*`, and it renders as its origin followed by its path. A bare entry keeps the value's query and therefore authorizes that exact URL; with a suffix, the value MUST NOT carry a query, and the suffix is appended once any trailing `/` of the rendered value is removed.
+
+An entry whose value is missing or violates these rules cannot be rendered and MUST be dropped; the other entries still apply. When a declared, non-empty `authorized_uris` renders to no entry, the consumer MUST refuse every credentialed request on that connection (unless `allow_all_uris` is `true`); it MUST NOT fall back to the behavior of an auth method that declares no `authorized_uris`. Consumers SHOULD reject a connection whose credential values would leave an entry unrenderable when the connection is created.
 
 ### 7.10 Setup Guide
 
@@ -1172,7 +1192,9 @@ Packages distributed through registries are subject to supply chain attacks incl
 Integration auth methods include `authorized_uris` to restrict which upstream endpoints a credential can be sent to:
 
 - consumers MUST NOT send credentials to URIs outside the authorized set unless `allow_all_uris` is explicitly `true`;
-- URI patterns using wildcards (e.g., `https://api.example.com/**`) SHOULD be matched strictly — consumers MUST NOT allow pattern bypass via URL encoding, fragment injection, or open redirects.
+- an auth method that injects its credential into HTTP requests MUST bound its hosts: no `allow_all_uris: true` and no `authorized_uris` entry that leaves the host to the caller (§7.9); consumers MUST reject such a manifest and refuse such credentialed requests;
+- URI patterns using wildcards (e.g., `https://api.example.com/**`) SHOULD be matched strictly — consumers MUST NOT allow pattern bypass via URL encoding, fragment injection, or open redirects;
+- a host rendered from a credential template (§7.9) is chosen by whoever supplies the credential, not by the package author: consumers MUST NOT grant it the trust of an author-declared host (for example, an exemption from server-side request forgery checks).
 
 ### 8.7 Credential Discovery (SSRF)
 
@@ -1344,14 +1366,14 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.authorization_params` | integration | object | MAY | extra authorize query params (AFPS) | none |
 | `auths.<key>.default_scopes` | integration | string[] | MAY | baseline requested scopes | none |
 | `auths.<key>.scope_catalog` | integration | object[] | MAY | `{ value, label, description?, implies? }` (AFPS authoritative) | none |
-| `auths.<key>.identity_claims` | integration | object | MAY | AFPS key → OIDC claim name | none |
+| `auths.<key>.identity_claims` | integration | object | MAY | AFPS key → JSONPath (singular query) | none |
 | `auths.<key>.required_identity_claims` | integration | string[] | MAY | required OIDC claims | none |
 | `auths.<key>.credentials.schema` | integration | object | MUST for api_key/basic/mtls/custom | self-contained JSON Schema 2020-12; local `$ref` only | none |
 | `auths.<key>.delivery` | integration | object | MUST | ≥1 of `http`, `env`, `files`; `http` exclusive of `env`/`files` | none |
 | `auths.<key>.delivery.http` | integration | object | MAY | `{ in, name, prefix?, value, encoding?, allow_server_override? }` | none |
 | `auths.<key>.delivery.http.in` | integration | string | MUST if `http` present | `header\|query\|cookie` (OpenAPI) | none |
 | `auths.<key>.delivery.http.name` | integration | string | MUST if `http` present | header/query/cookie parameter name (OpenAPI) | none |
-| `auths.<key>.delivery.http.value` | integration | string | MUST if `http` present | value template (`{$credential.*}`, `{$outputs.*}`) | none |
+| `auths.<key>.delivery.http.value` | integration | string | MUST if `http` present | value template (`{$credential.*}`) | none |
 | `auths.<key>.delivery.http.prefix` | integration | string | MAY | literal prefix prepended to the rendered value (e.g. `"Bearer "`) | none |
 | `auths.<key>.delivery.http.encoding` | integration | string | MAY | `base64` (RFC 4648 §4), applied to `value` only | none |
 | `auths.<key>.delivery.http.allow_server_override` | integration | boolean | MAY | whether the source server may override the injected value | `false` |
@@ -1371,7 +1393,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.connect.login.identity_outputs` | integration | string[] | MAY | names of outputs that establish the connection identity | none |
 | `auths.<key>.connect.tool` | integration | object | MAY (custom only) | experimental alternative to `login`; tools used are auto-hidden (`hidden_tools`) | none |
 | `auths.<key>.connect.limits` | integration | object | MAY | `{ request_timeout_ms?, max_response_bytes? }` (positive numbers) | none |
-| `auths.<key>.authorized_uris` | integration | string[] | MAY | allowed upstream URI patterns (glob) | none |
+| `auths.<key>.authorized_uris` | integration | string[] | MAY | allowed upstream URI patterns (glob; credential templates, §7.9) | none |
 | `auths.<key>.allow_all_uris` | integration | boolean | MAY | unrestricted upstream access | `false` |
 | `tools_policy` | integration | object | MAY | sparse per-tool policy table (augments canonical tool catalog of the referenced source); keys MUST resolve in the canonical catalog | none |
 | `tools_policy.<name>.required_scopes` | integration | object `{ <auth_key>: string[] }` | MAY | per-auth scopes a tool requires; each key a declared `auths` entry, scopes ⊆ that auth's `scope_catalog` (consent inference, not an exclusivity lock) | none |
