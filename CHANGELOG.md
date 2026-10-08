@@ -44,12 +44,18 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
   `$response.header.<name>` or a literal — a JSON number, `true`, `false`,
   `null`, a single-quoted string with `''` for a quote, optionally a
   double-quoted string — at least one side an expression; strings compare
-  case-insensitively), a `jsonpath` Criterion on `$response.body`, a `regex`
+  case-insensitively, a number equals only a string holding the same JSON
+  number, an absent value equals nothing), a `jsonpath` Criterion on
+  `$response.body`, a `regex`
   Criterion (ECMA-262) on `$response.body` or one header, and `jsonpath` and
   `jsonpointer` Selector Objects on `$response.body`. Any other form, `xpath`
   included, is now optional (consumers were required to resolve `xpath`); a
   consumer that does not support a form a manifest declares MUST report it no
   later than install or save, and MUST NOT send a login request for it.
+- **Breaking:** §7.7 an AFPS extractor object carries no Selector Object field
+  (`context`, `selector`, `type`); a `regex` extractor's `pattern` is an
+  ECMA-262 regular expression and its `group` (default 1) a capture group the
+  pattern declares.
 - **Breaking:** §7.3 client credentials an authorization server issues are bound
   to it (the `issuer` of its validated metadata) and presented only to its
   endpoints — never to a manifest-declared endpoint that differs from them — and
@@ -109,12 +115,8 @@ Producers: nothing to change; `variables` is opt-in. Consumers: validate with
 parses as a literal URL; until variables are implemented, refuse integrations
 that declare `variables`.
 
-A `connect.login` with a compound or grouped `simple` condition, an unquoted
-string literal, or `xpath` may be rejected by a consumer that evaluates only the
-§7.7 profile: rewrite it within the profile (one Criterion per comparison,
-`success_criteria` omitted for HTTP 2xx, `regex` or `jsonpath` otherwise).
-Consumers evaluate at least the profile, compare its strings case-insensitively,
-and report any other form they do not support at install or save.
+`connect.login`: see the two §7.7 entries under Changed. Producers rewrite a form
+outside the evaluation profile within it; consumers evaluate at least the profile.
 
 ## Schema `@afps-spec/schema@0.8.0` — 2026-10-08
 
