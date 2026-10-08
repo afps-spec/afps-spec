@@ -68,6 +68,7 @@ This draft is published for community review and early implementation feedback. 
   - [7.9 URI Restrictions](#79-uri-restrictions)
   - [7.10 Setup Guide](#710-setup-guide)
   - [7.11 OpenAPI Security Scheme Mapping (Informative)](#711-openapi-security-scheme-mapping-informative)
+  - [7.12 Connection Variables](#712-connection-variables)
 - [8. Security Considerations](#8-security-considerations)
   - [8.1 Archive Processing](#81-archive-processing)
   - [8.2 MCP-Server Code Execution](#82-mcp-server-code-execution)
@@ -601,6 +602,14 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 - **Example**: `{ "oauth": { "type": "oauth2", "issuer": "https://accounts.google.com", "delivery": { "http": { "in": "header", "name": "Authorization", "prefix": "Bearer ", "value": "{$credential.access_token}" } } } }`
 - **Default**: none
 
+#### `variables`
+- **Type**: object
+- **Required**: MAY
+- **Format**: `{ "schema": <JSON Schema 2020-12 object> }`; at least one property; each property a required `string` variable named per `VARIABLE_NAME_REGEX` (Appendix B)
+- **Description**: Connection variables — non-secret values the user supplies when creating a connection, before any authorization step, shared by every auth method and referenced as `{$variable.<name>}`. They let a URL-valued field name an upstream chosen per connection, such as a self-hosted instance. See §7.12.
+- **Example**: `{ "schema": { "type": "object", "properties": { "base_url": { "type": "string", "format": "uri" } }, "required": ["base_url"] } }`
+- **Default**: none
+
 > The integration manifest uses the common-fields `icon` / `icons` (§3.1) for presentation.
 >
 > The integration manifest also accepts the tool-surface fields `tools_policy`, `hidden_tools`, and `allow_undeclared_tools` — full descriptions live under §7.8 (Per-Tool Policy) since they are part of the authentication / runtime-surface model rather than the structural envelope.
@@ -678,7 +687,7 @@ Producers MAY add fields under `_meta` within a configuration object (§10).
 
 ## 5. Schema System
 
-AFPS uses standard JSON Schema 2020-12 for property definitions within agent `input` and `output` sections, and within an integration auth method's `credentials.schema` (§7.5). The container schema MUST be an object with `type: "object"` and a `properties` record. Any valid JSON Schema 2020-12 keyword may be used within property definitions.
+AFPS uses standard JSON Schema 2020-12 for property definitions within agent `input` and `output` sections, within an integration auth method's `credentials.schema` (§7.5), and within an integration's `variables.schema` (§7.12). The container schema MUST be an object with `type: "object"` and a `properties` record. Any valid JSON Schema 2020-12 keyword may be used within property definitions.
 
 ### 5.1 JSON Schema Properties
 
@@ -849,7 +858,7 @@ An integration authenticates the **upstream-credential hop** — the credential 
 ```
 
 - **`local`** — `source.server` references an `mcp-server` package by its AFPS package identity (`name`, a scoped name per §2.2) and a semver `version` range. This is the only source whose referenced server is itself a standalone MCPB-runnable artifact; the integration's authentication layer is applied by the AFPS runtime on top. The optional `vendored` boolean records that the referenced MCP server was vendored into the publishing pipeline at build time (MCPB bundles dependencies into the archive rather than resolving registry references at install time). Build-provenance for a vendored foreign package (for example a [Package URL]) MAY be recorded under `_meta`; it is never the reference mechanism.
-- **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source has no `mcp-server` package and no `.mcpb` form.
+- **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source has no `mcp-server` package and no `.mcpb` form. When the endpoint's location varies per connection (a self-hosted instance, a tenant host), `url` MAY be a URL template over connection variables (§7.12), e.g. `{$variable.base_url}/mcp`.
 - **`none`** — the integration declares no MCP backing. It exposes no MCP-tool catalog of its own; any capabilities it offers come from vendor `_meta` extensions (§10) — for example a runtime that injects credentials into a direct HTTP surface. The `kind` discriminant carries no further spec-defined fields. Vendor extensions are non-normative: a runtime that does not recognise them sees an integration with auth methods and no tools.
 
 A source whose surface is not a local MCP server (`remote`, or `none`) cannot be expressed as an `mcp-server` package and has no `.mcpb` form. This is a property of the source kind, not a runnability gradient.
@@ -868,16 +877,23 @@ Every auth method MUST declare `delivery` (§7.6) — where its credential is in
 
 ### 7.3 OAuth2 Configuration and Discovery
 
-For an auth method of `type: "oauth2"`, the endpoint set is resolved **discovery-first**: a consumer SHOULD fetch the authorization server's metadata document and MAY accept manual overrides. Discovery is best-effort enrichment, never a precondition — many providers publish no discovery document, so every discovered field MUST be overridable and a fully-manual configuration MUST be supported.
+For an auth method of `type: "oauth2"`, the endpoint set is resolved **discovery-first**: a consumer SHOULD fetch the authorization server's metadata document and MAY accept manual overrides. Discovery is best-effort enrichment, never a precondition — many providers publish no discovery document, so every discovered field MUST be overridable (within *Client binding*, below) and a fully-manual configuration MUST be supported.
 
 #### `issuer`
 - **Type**: string (URI)
 - **Required**: SHOULD (REQUIRED to enable discovery)
 - **Description**: The OAuth 2.0 / OIDC issuer identifier. Consumers use it to locate the authorization server metadata document. When `issuer` is absent, the manual endpoint fields below are REQUIRED — **except** when the integration's `source.kind` is `remote` (§7.1), in which case both `issuer` and the manual endpoints MAY be omitted and are resolved at connect time from `source.remote.url` (see *Remote MCP authorization* below).
 
+An auth method's authorization server is **chosen per connection** — for a self-hosted instance — in two cases, and **fixed** otherwise:
+
+- its `issuer` is a URL template over connection variables (§7.12). It MUST then declare none of `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, and `resource`. Discovery against the rendered issuer (below) MUST yield `authorization_endpoint` and `token_endpoint`, or the consumer MUST NOT use the connection; the consumer uses a `userinfo_endpoint` only when the discovered metadata advertises one, sends no [RFC 8707] resource indicator unless the source is `remote` (whose protected-resource `resource` is always sent, below), and acquires its client as in step 3 of *Remote MCP authorization* (below);
+- `source.remote.url` is a URL template. Every `oauth2` auth method of the integration MUST then declare none of the endpoints and `resource`, and MAY declare an `issuer` only as a URL template over variables of `source.remote.url`. Its authorization server comes from remote MCP authorization against the rendered URL (below), and is named by the server the user chose, not by the author: the consumer uses only an entry of its `authorization_servers` that equals the rendered `issuer` when one is declared, and otherwise has the origin of the rendered URL, and MUST NOT continue when there is none.
+
+No other field of an auth method is templated: an endpoint the user could choose apart from the issuer would receive the client credentials of the issuer's client.
+
 #### Endpoint fields (RFC 8414 / OIDC Discovery vocabulary, verbatim)
 
-These fields use the snake_case field names defined by [RFC 8414] and [OpenID Connect Discovery] so that a value may be copied directly from a discovery document. Any field a consumer obtains from discovery MUST be overridable by an explicit manifest value.
+These fields use the snake_case field names defined by [RFC 8414] and [OpenID Connect Discovery] so that a value may be copied directly from a discovery document. Any field a consumer obtains from discovery MUST be overridable by an explicit manifest value, except where *Client binding* (below) forbids presenting client credentials to it.
 
 - `authorization_endpoint` (string, URI) — REQUIRED when discovery is unavailable. [RFC 8414]
 - `token_endpoint` (string, URI) — REQUIRED when discovery is unavailable. [RFC 8414]
@@ -895,17 +911,25 @@ When `issuer` is present and a consumer performs discovery, it MUST probe the th
 2. OIDC path-insertion: `https://{host}/.well-known/openid-configuration{/path}`;
 3. OIDC path-append: `https://{host}{/path}/.well-known/openid-configuration`.
 
-A consumer MUST validate that the returned `issuer` equals the configured issuer before using any discovered endpoint. Discovery failure MUST fall back to the manual endpoint fields; it MUST NOT block configuration when those fields are present. See §8.7 for the SSRF considerations of fetching discovery documents.
+A consumer MUST validate that the returned `issuer` equals the configured issuer — the rendered issuer, when it is templated — before using any discovered endpoint. Discovery failure MUST fall back to the manual endpoint fields; it MUST NOT block configuration when those fields are present. See §8.7 for the SSRF considerations of fetching discovery documents.
 
 #### Remote MCP authorization
 
 When the integration's `source.kind` is `remote` (§7.1), the remote MCP server is an OAuth 2.0 **protected resource** and its authorization server is not known until connect time. For such an integration an `oauth2` auth MAY omit `issuer` and the manual endpoints entirely; a consumer that supports remote MCP authorization resolves them from `source.remote.url` following the [Model Context Protocol authorization model]:
 
-1. **Protected-resource metadata** ([RFC 9728]) — the consumer derives the protected-resource metadata document from `source.remote.url` (well-known probe, or the `resource_metadata` parameter of a `WWW-Authenticate` challenge on an unauthenticated request). It advertises the canonical `resource` (used as the [RFC 8707] resource indicator on the token request) and the `authorization_servers`.
+1. **Protected-resource metadata** ([RFC 9728]) — the consumer fetches the protected-resource metadata of `source.remote.url` from, in order, the `resource_metadata` parameter of a `WWW-Authenticate` challenge to an unauthenticated request, the path-inserted well-known location, and the root well-known location. A document advertises the canonical `resource` (used as the [RFC 8707] resource indicator) and the `authorization_servers`. The consumer MUST use a document only when its `resource` is identical, after stripping every trailing `/`, to the resource identifier its location was derived from ([RFC 9728] §3.3) — `source.remote.url` for the challenge and the path-inserted location, its origin for the root location — and otherwise tries the next location. When none qualifies, it MUST NOT continue unless the manifest declares the `issuer` or the endpoints and `source.remote.url` is not a URL template (a templated `issuer` beside a templated `source.remote.url` only selects among the advertised `authorization_servers`).
 2. **Authorization-server metadata** ([RFC 8414]) — discovery against the advertised issuer yields `authorization_endpoint`, `token_endpoint`, and — when the server supports it — a `registration_endpoint`.
-3. **Client acquisition** — the consumer obtains an OAuth client for that authorization server, in priority order: a pre-registered client if one exists; otherwise a client established without manual pre-registration ([Client ID Metadata Documents] when the authorization server advertises support, or [RFC 7591] Dynamic Client Registration when it advertises a `registration_endpoint`). Public-client + PKCE ([RFC 7636]) is the norm (`token_endpoint_auth_method: "none"`).
+3. **Client acquisition** — the consumer obtains an OAuth client for that authorization server, in priority order: a client the operator pre-registered with that authorization server for this integration, if one exists; otherwise a client established without manual pre-registration ([Client ID Metadata Documents] when the authorization server advertises support, or [RFC 7591] Dynamic Client Registration when it advertises a `registration_endpoint`). Public-client + PKCE ([RFC 7636]) is the norm (`token_endpoint_auth_method: "none"`).
 
-A manifest MAY still declare `issuer`, endpoints, or `resource` for a `remote` source; any explicitly declared value overrides the discovered one (discovery is enrichment, not a precondition — §7.3). This onboarding is a **consumer concern**: AFPS describes the manifest surface, not the runtime OAuth client implementation. A consumer that does not support remote MCP authorization MUST still treat a manually-configured `remote` integration (one that declares `issuer` or endpoints) as valid. See §8.7 for the SSRF considerations of fetching discovery and registration documents.
+A manifest MAY still declare `issuer`, endpoints, or `resource` for a `remote` source whose `source.remote.url` is not a URL template; any explicitly declared value overrides the discovered one (discovery is enrichment, not a precondition — §7.3). This onboarding is a **consumer concern**: AFPS describes the manifest surface, not the runtime OAuth client implementation. A consumer that does not support remote MCP authorization MUST still treat a manually-configured `remote` integration (one that declares `issuer` or endpoints) as valid. See §8.7 for the SSRF considerations of fetching discovery and registration documents.
+
+When `source.remote.url` is a URL template (§7.12), every step above uses the rendered URL, and the connection variables are collected before step 1.
+
+#### Client binding
+
+Client credentials an authorization server issues — the secret or key of a pre-registered client, or of a client registered with [RFC 7591] — are bound to that authorization server, identified by the `issuer` of its validated metadata (§7.3 discovery) or, when it has none, by its token endpoint URL. A consumer MUST present them only to that server's endpoints: those of its validated metadata or, for a server without metadata, the token endpoint the operator registered the client with — never an endpoint the manifest alone names. In particular a manifest-declared endpoint that differs from the validated metadata of the server whose client is used MUST NOT receive them. Every client assertion a consumer signs MUST carry a single audience naming that server: its issuer identifier, or its token endpoint URL. For an authorization server chosen per connection, whose metadata a connection's user controls, the audience MUST be the `issuer` of its validated metadata. A [Client ID Metadata Documents] `client_id` is designed for use with any authorization server and carries no issued credential.
+
+When an auth method's authorization server is chosen per connection, a consumer acquires its client per rendered authorization server and integration, in the order of step 3 of *Remote MCP authorization*: a client is never shared by two authorization servers, nor by two integrations unless the operator designates it. Such a consumer interacts with several authorization servers, so in every authorization flow it MUST defend against mix-up attacks ([RFC 9700] §4.4): it MUST compare the `iss` authorization response parameter ([RFC 9207]), whenever present, with the `issuer` of the validated metadata of the server the request was sent to, by simple string comparison, and MUST reject a response without it from an authorization server whose metadata advertises `authorization_response_iss_parameter_supported` as `true`. For an authorization server whose metadata does not advertise it, the consumer MUST use a redirect URI distinct from that of every other authorization server it uses, whether chosen per connection or fixed, and MUST reject a response not received at the redirect URI of the authorization server the request was sent to.
 
 ### 7.4 Scopes
 
@@ -983,7 +1007,7 @@ The block below is a **syntax catalogue** showing all three delivery shapes; it 
 
 No specification standardizes runtime secret injection into environment variables and files; the `env`/`files` vocabulary borrows Kubernetes naming (`mode`, mount-style paths) and is an AFPS contribution.
 
-Value templates reference the connection's credential fields as `{$credential.<field>}`; no other expression is rendered, and a consumer MUST reject a template carrying one. For an auth method with `connect` (§7.7), the credential fields are its declared outputs: output `<name>` is `{$credential.<name>}`.
+Value templates reference the connection's credential fields as `{$credential.<field>}` and its connection variables (§7.12) as `{$variable.<name>}`; no other expression is rendered, and a consumer MUST reject a template carrying one. For an auth method with `connect` (§7.7), the credential fields are its declared outputs: output `<name>` is `{$credential.<name>}`.
 
 ### 7.7 Declarative Credential Acquisition (connect)
 
@@ -1024,7 +1048,7 @@ Value templates reference the connection's credential fields as `{$credential.<f
 }
 ```
 
-- **`request`** — the inline HTTP request issued to obtain the credential. `content_type` selects the body encoding. `url`, header values, and `body` MAY carry `{{<name>}}` placeholders, each replaced by the user-supplied `credentials.schema` field `<name>` before the request is sent; an unresolved placeholder MUST fail the login. No `{$…}` expression is evaluated in the request.
+- **`request`** — the inline HTTP request issued to obtain the credential. `content_type` selects the body encoding. `url`, header values, and `body` MAY carry `{{<name>}}` placeholders, each replaced by the user-supplied `credentials.schema` field `<name>` before the request is sent; an unresolved placeholder MUST fail the login. These placeholders substitute user-supplied credentials into the request as they are. No other `{$…}` expression is evaluated in the request.
 - **`success_criteria`** — an array of Arazzo Criterion objects (`condition`, optional `context`, optional `type` of `simple`/`regex`/`jsonpath`/`xpath`). When omitted, success is HTTP 2xx.
 - **`outputs`** — a map of named outputs. Each value is one of:
   - an **Arazzo runtime-expression string** (Arazzo §5.9): `$statusCode`, `$response.body`, `$response.body#/{json-pointer}` ([RFC 6901]), `$response.header.{name}`;
@@ -1039,7 +1063,7 @@ Value templates reference the connection's credential fields as `{$credential.<f
 
 **JSONPath.** Every JSONPath in an integration manifest — a `jsonpath` Selector Object `selector`, the `condition` of a `jsonpath` Criterion, and the values of `identity_claims` (§7.4) — MUST be an absolute singular query ([RFC 9535] §2.3.5.1): `$` followed only by name segments (`.name`, `['name']`) and index segments (`[0]`, `[-1]`), e.g. `$.profile.id`. Wildcards, slices, filters, unions, and descendant segments MUST NOT be used; consumers MUST reject a manifest that uses them. A `jsonpath` Criterion is met when its query selects a value other than `null`, an empty string, or an empty array.
 
-**Gating rule.** A `delivery.*` value template MAY only reference declared `connect` outputs, as `{$credential.<output>}` (or, for the orchestrated `tool` mode, its declared `produces`). A delivery referencing a non-output — for example a bootstrap login secret — is a manifest error.
+**Gating rule.** A `delivery.*` value template MAY only reference declared `connect` outputs, as `{$credential.<output>}` (or, for the orchestrated `tool` mode, its declared `produces`), and connection variables as `{$variable.<name>}`, within the limits §7.12 sets for an issued credential. A delivery referencing anything else — for example a bootstrap login secret — is a manifest error.
 
 A value template embeds a credential field as `{$credential.<field>}` (for example `{$credential.token}`); the `connect.login` fields that name a part of the response (`context`, `source`, string outputs, criteria) are bare Arazzo runtime expressions. The runtime-expression grammar is adopted from [Arazzo]; the extractor objects (`from: jwt|regex|cookie`) are AFPS extensions.
 
@@ -1085,28 +1109,28 @@ When an agent picks an `oauth2` auth (via `integrations_configuration.<id>.auth_
 
 An auth method MAY restrict which upstream URIs the integration may send credentials to:
 
-- `authorized_uris` (array of strings) — allowed upstream URI patterns (glob `*`/`**`). An entry MAY be a credential template (below).
+- `authorized_uris` (array of strings) — allowed upstream URI patterns (glob `*`/`**`). An entry MAY be a credential or variable template (below).
 - `allow_all_uris` (boolean) — explicit override permitting any upstream URI, except for an auth method that injects its credential (below). When omitted, consumers resolve `allow_all_uris` as `false`.
 
 Consumers MUST NOT send credentials to URIs outside the authorized set unless `allow_all_uris` is explicitly `true`, and SHOULD treat `allow_all_uris: true` as security-sensitive (§8.6).
 
-An auth method that injects its credential into HTTP requests — one that declares `delivery.http`, or one of `type` `oauth2`, `api_key`, or `basic` — MUST NOT set `allow_all_uris: true`, and MUST NOT declare an `authorized_uris` entry that leaves the host to the caller: an entry with a wildcard in either of the host's last two labels (`https://**`, `https://*.com/**`, `https://example.*`), or a wildcard entry without a `scheme://` prefix. A host whose last two labels are literal (`https://*.example.com/**`), or that a credential template supplies (below), is bounded. Consumers MUST reject such a manifest when it is published or saved, and at run time MUST refuse every credentialed request of such an auth method whose `authorized_uris` is empty or contains such an entry, whatever `allow_all_uris` says.
+An auth method that injects its credential into HTTP requests — one that declares `delivery.http`, or one of `type` `oauth2`, `api_key`, or `basic` — MUST NOT set `allow_all_uris: true`, and MUST NOT declare an `authorized_uris` entry that leaves the host to the caller: an entry with a wildcard in either of the host's last two labels (`https://**`, `https://*.com/**`, `https://example.*`), or a wildcard entry without a `scheme://` prefix. A host whose last two labels are literal (`https://*.example.com/**`), or that a credential or variable template supplies (below), is bounded. Consumers MUST reject such a manifest when it is published or saved, and at run time MUST refuse every credentialed request of such an auth method whose `authorized_uris` is empty or contains such an entry, whatever `allow_all_uris` says.
 
-#### Credential templates
+#### Credential and variable templates
 
-An `authorized_uris` entry MAY reference the connection's own credential fields with `{$credential.<field>}` placeholders (§7.6), so that an integration whose upstream is chosen per connection (a self-hosted instance, a tenant host, a webhook URL) bounds its credential to that upstream instead of declaring a catch-all pattern. A templated entry MUST take one of two forms:
+An `authorized_uris` entry MAY reference the connection's own credential fields with `{$credential.<field>}` placeholders, or its connection variables with `{$variable.<name>}` placeholders (§7.6, §7.12), so that an integration whose upstream is chosen per connection (a self-hosted instance, a tenant host, a webhook URL) bounds its credential to that upstream instead of declaring a catch-all pattern. A templated entry MUST take one of two forms:
 
 - **Authority form** — the entry starts with `scheme://` and every placeholder lies in the authority (before the first `/`, `?`, or `#` that follows `://`), e.g. `https://{$credential.host}/**` or `ssh://{$credential.host}:{$credential.port}`.
 - **URL form** — the entry starts with exactly one placeholder, followed either by nothing (the *bare* form, e.g. `{$credential.webhook_url}`) or by a suffix that begins with `/` and contains no placeholder, e.g. `{$credential.base_url}/v1/**`.
 
-Every referenced field MUST be a property of `credentials.schema` (§7.5) listed in its `required`. Templated entries MUST NOT appear on an auth method of `type: "oauth2"` or on one that declares `connect` (§7.7). A consumer that implements credential templates MUST reject a manifest that violates these rules; one that does not MUST treat every templated entry as matching no URI.
+Every `{$credential.<field>}` reference MUST name a property of `credentials.schema` (§7.5) listed in its `required`, and an entry carrying one MUST NOT appear on an auth method of `type: "oauth2"` or on one that declares `connect` (§7.7), whose credential is not user-supplied. Every `{$variable.<name>}` reference MUST name a declared connection variable (§7.12). An entry carrying one MUST take the URL form, or the authority form with a single placeholder filling the host, alone or followed by literal labels (`https://{$variable.tenant}.example.com/**`). On an `oauth2` auth method, or one that declares `connect`, the credential is issued for an upstream: for an `oauth2` auth method, `source.remote.url` (§7.1) when the source is `remote` — the resource its tokens are for — and its `issuer` (§7.3) otherwise; for a `connect.tool`, `source.remote.url`; for a `connect.login`, its request URL (§7.7). When that upstream is a URL template, every entry of the auth method MUST carry a variable and share the template's origin — the same leading placeholder in the URL form; in the authority form, the same scheme and host as a host-form template, and no port — so that the credential reaches only the origin it was issued for. When the upstream is fixed, no entry carries a variable. A consumer that implements credential templates MUST reject a manifest that violates these rules; one that does not MUST treat every templated entry as matching no URI.
 
-A consumer renders templated entries for each connection from that connection's credential values, and matches request URIs against the rendered list. A substituted value is a literal, never a pattern:
+A consumer renders templated entries for each connection from that connection's values, and matches request URIs against the rendered list. A substituted value is a literal, never a pattern. A `{$variable.<name>}` value follows the rules of §7.12 — those of its URL form in the URL form, those of its host form in the authority form, where a variable fills only the host; a consumer matches and egress-checks the host as a [WHATWG URL] parser reads it (which turns `0x7f000001` into `127.0.0.1`). A `{$credential.<field>}` value follows these:
 
-- in the authority form, each value MUST consist only of ASCII letters, digits, `.`, and `-`, and MUST NOT consist only of dots;
-- in the URL form, the value MUST be an absolute URL with scheme `http` or `https`, a non-empty host, and no userinfo, fragment, empty query, or `*`, and it renders as its origin followed by its path. A bare entry keeps the value's query and therefore authorizes that exact URL; with a suffix, the value MUST NOT carry a query, and the suffix is appended once any trailing `/` of the rendered value is removed.
+- in the authority form, each value MUST be non-empty, MUST consist only of ASCII letters, digits, `.`, and `-`, and MUST NOT consist only of dots; a value substituted into the port MUST be a decimal integer from 1 to 65535, without leading zeros;
+- in the URL form, the value MUST be an absolute URL with scheme `http` or `https`, a non-empty host, and no userinfo, fragment, empty query, or `*`, and it renders as its origin followed by its path. A bare entry keeps the value's query and therefore authorizes that exact URL; with a suffix, the value MUST NOT carry a query, and the suffix is appended once every trailing `/` of the rendered value is removed.
 
-An entry whose value is missing or violates these rules cannot be rendered and MUST be dropped; the other entries still apply. When a declared, non-empty `authorized_uris` renders to no entry, the consumer MUST refuse every credentialed request on that connection (unless `allow_all_uris` is `true`); it MUST NOT fall back to the behavior of an auth method that declares no `authorized_uris`. Consumers SHOULD reject a connection whose credential values would leave an entry unrenderable when the connection is created.
+An entry whose value is missing or violates these rules cannot be rendered and MUST be dropped; the other entries still apply. When a declared, non-empty `authorized_uris` renders to no entry, the consumer MUST refuse every credentialed request on that connection (unless `allow_all_uris` is `true`); it MUST NOT fall back to the behavior of an auth method that declares no `authorized_uris`. Consumers SHOULD reject a connection whose values would leave an entry unrenderable when the connection is created.
 
 ### 7.10 Setup Guide
 
@@ -1129,6 +1153,52 @@ An AFPS auth method maps onto an [OpenAPI] Security Scheme (also used by [A2A] `
 | `custom` | not standardly representable; SHOULD be omitted from a derived OpenAPI document or recorded under `_meta` (§10) |
 
 This mapping is informative and does not impose normative requirements on AFPS consumers.
+
+### 7.12 Connection Variables
+
+An integration whose upstream is chosen per connection — a self-hosted instance, a tenant host — MAY declare **connection variables**: non-secret values the user supplies when creating a connection, before any authorization step, and that every auth method of the integration shares. They are declared in the top-level `variables` object and referenced as `{$variable.<name>}`.
+
+```jsonc
+"variables": {
+  "schema": {
+    "type": "object",
+    "properties": {
+      "base_url": {
+        "type": "string",
+        "format": "uri",
+        "title": "Instance URL",
+        "default": "https://forge.example.com"
+      }
+    },
+    "required": ["base_url"]
+  }
+}
+```
+
+- `variables.schema` MUST be a self-contained JSON Schema 2020-12 document of `type: "object"` with at least one property, under the local-only `$ref` rule of `credentials.schema` (§7.5). Each property is one variable: its name MUST match `VARIABLE_NAME_REGEX` (Appendix B), its `type` MUST be the string `"string"`, and it MUST be listed in `required`, which names no other property. Validation keywords (`format`, `pattern`, `enum`) constrain the value, and a consumer MUST reject a value that does not validate against `variables.schema`. A consumer MAY pre-fill a form with `default`; a variable's value is only ever a value the user submitted.
+- Variables are not credentials. Producers MUST NOT declare a secret as a variable; §8.3 does not apply to variable values, which consumers MAY display and log. Variables and credential fields are separate namespaces (`{$variable.*}`, `{$credential.*}`) and may share a name.
+- A credential is acquired for the upstream its connection's variables name. When a variable of an existing connection changes, the connection MUST stop using its credential — and the client of its previous authorization server (§7.3) — until the consumer has acquired a credential for the new upstream — through a new authorization, or from the user again for a credential the user supplies.
+- A consumer that does not implement connection variables MUST treat an integration that declares `variables` as unusable.
+
+Under `source`, `auths` (outside `credentials.schema`), and `setup_guide`, `{$variable.<name>}` MAY appear only in value templates (§7.6), in `authorized_uris` (§7.9), and in the URL-valued fields below; anywhere else there it is a manifest error. Every reference MUST name a declared variable. On an `oauth2` auth method, or one that declares `connect`, a value template MUST reference only variables of the URL template that chooses the upstream its credential is for (§7.9) — none when that upstream is fixed — so that no variable steers an issued credential elsewhere.
+
+#### URL-valued fields
+
+`source.remote.url` (§7.1) and an `oauth2` auth method's `issuer` (§7.3) MAY be a **URL template** of one of two forms, matching `URL_TEMPLATE_REGEX` (Appendix B):
+
+- **URL form** — a `{$variable.<name>}` placeholder, followed by nothing or by a path, e.g. `{$variable.base_url}/api/v4/mcp`.
+- **Host form** — `https://`, a `{$variable.<name>}` placeholder, one or more literal domain labels (the last one starting with a letter), then nothing or a path, e.g. `https://{$variable.tenant}.forge.example.com/mcp`.
+
+A path is a sequence of `/`-prefixed segments, optionally ending with `/`. A segment is non-empty, is neither `.` nor `..`, and consists only of ASCII letters, digits, and the characters `-._~!$&'()+,;=:@`.
+
+A consumer renders a URL template for each connection by substituting the value and concatenating, never by resolving one part as a relative reference against another:
+
+- in the URL form, the value MUST be an absolute URL with scheme `https`, a non-empty host, and no userinfo, query (empty or not), fragment (empty or not), or `*`. Without a path, the template renders as the value's [WHATWG URL] serialization; with a path, it renders as the serialized origin and path of the value, every trailing `/` removed, followed by the template's path;
+- in the host form, the value MUST be one or more `.`-separated labels of 1 to 63 ASCII letters, digits, and `-`, none starting or ending with `-`. The rendered host MUST NOT exceed 253 characters.
+
+A consumer MAY accept an `http` value only for a host its operator explicitly designates (for example, loopback during development). A consumer uses the [WHATWG URL] serialization of a rendered URL, which lowercases its host. Where this specification compares a rendered URL with one a server returns (§7.3), the two are equal when they are identical after stripping every trailing `/`. A consumer MUST refuse to create a connection whose variable values would leave a URL template unrenderable, and MUST NOT use an unrenderable template.
+
+A rendered URL is chosen by the user who creates the connection, not by the package author: §8.6 and §8.7 govern the trust and the egress controls it is subject to.
 
 ## 8. Security Considerations
 
@@ -1194,7 +1264,8 @@ Integration auth methods include `authorized_uris` to restrict which upstream en
 - consumers MUST NOT send credentials to URIs outside the authorized set unless `allow_all_uris` is explicitly `true`;
 - an auth method that injects its credential into HTTP requests MUST bound its hosts: no `allow_all_uris: true` and no `authorized_uris` entry that leaves the host to the caller (§7.9); consumers MUST reject such a manifest and refuse such credentialed requests;
 - URI patterns using wildcards (e.g., `https://api.example.com/**`) SHOULD be matched strictly — consumers MUST NOT allow pattern bypass via URL encoding, fragment injection, or open redirects;
-- a host rendered from a credential template (§7.9) is chosen by whoever supplies the credential, not by the package author: consumers MUST NOT grant it the trust of an author-declared host (for example, an exemption from server-side request forgery checks).
+- a host rendered from a template (§7.9, §7.12) is chosen by whoever creates the connection, not by the package author: consumers MUST NOT grant it the trust of an author-declared host (for example, an exemption from server-side request forgery checks);
+- when `source.remote.url` is a URL template, its authorization server comes from metadata the user's chosen server publishes and may serve other resources: consumers MUST send the [RFC 8707] resource indicator on authorization and token requests, and SHOULD show the user the rendered URL before sending them to authorize.
 
 ### 8.7 Credential Discovery (SSRF)
 
@@ -1202,8 +1273,9 @@ OAuth discovery (§7.3) and credential schemas (§7.5) involve fetching or resol
 
 - consumers performing OAuth discovery MUST validate that a fetched metadata document's `issuer` equals the configured issuer before using any endpoint from it (§7.3);
 - consumers SHOULD restrict discovery fetches to the issuer host and SHOULD apply timeouts and response-size limits;
+- a URL rendered from connection variables (§7.12) is user-supplied, and so is every URL a consumer obtains from a response to a request to such a URL — its body, headers, or redirects (`resource_metadata`, `authorization_servers`, `token_endpoint`, `registration_endpoint`, `jwks_uri`, …) — and, recursively, from responses to those: before connecting to one, consumers MUST apply the egress controls they apply to any user-supplied URL — for example, refusing loopback, link-local, and private addresses unless the operator explicitly allows them;
 - `credentials.schema` `$ref` MUST be local fragment-only (§7.5); consumers MUST NOT dereference external or remote `$ref`, which would otherwise enable server-side request forgery;
-- `connect.login` requests (§7.7) SHOULD be subject to the declared `limits` and to the same egress controls as `authorized_uris`.
+- `connect.login` requests (§7.7) SHOULD be subject to the declared `limits` and to the same egress controls as `authorized_uris`, and MUST be subject to those egress controls when the request URL carries a `{{<name>}}` placeholder.
 
 ## 9. Privacy Considerations
 
@@ -1270,6 +1342,9 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 - **[RFC 8414]** Jones, M., Sakimura, N., Bradley, J., "OAuth 2.0 Authorization Server Metadata", RFC 8414, June 2018. https://datatracker.ietf.org/doc/html/rfc8414
 - **[RFC 8707]** Campbell, B., Bradley, J., Jay, H., "Resource Indicators for OAuth 2.0", RFC 8707, February 2020. https://datatracker.ietf.org/doc/html/rfc8707
 - **[RFC 9728]** Jones, M., Hunt, P., Parecki, A., "OAuth 2.0 Protected Resource Metadata", RFC 9728, April 2025. https://datatracker.ietf.org/doc/html/rfc9728
+- **[RFC 9207]** Meyer zu Selhausen, K., Fett, D., "OAuth 2.0 Authorization Server Issuer Identification", RFC 9207, March 2022. https://datatracker.ietf.org/doc/html/rfc9207
+- **[RFC 9700]** Lodderstedt, T., Bradley, J., Labunets, A., Fett, D., "Best Current Practice for OAuth 2.0 Security", BCP 240, RFC 9700, January 2025. https://datatracker.ietf.org/doc/html/rfc9700
+- **[WHATWG URL]** WHATWG, "URL Standard", Living Standard. https://url.spec.whatwg.org/
 - **[RFC 4648]** Josefsson, S., "The Base16, Base32, and Base64 Data Encodings", RFC 4648, October 2006. https://datatracker.ietf.org/doc/html/rfc4648
 - **[RFC 9535]** Bormann, C., Bray, T., Gössner, S., "JSONPath: Query Expressions for JSON", RFC 9535, February 2024. https://datatracker.ietf.org/doc/html/rfc9535
 - **[XML Path Language 3.1]** W3C Recommendation, "XML Path Language (XPath) 3.1", March 2017. https://www.w3.org/TR/xpath-31/
@@ -1352,11 +1427,13 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `source.server.version` | integration | string | MUST for `kind=local` | semver range for the referenced `mcp-server` | none |
 | `source.server.vendored` | integration | boolean | MAY | records that the server payload is bundled MCPB-style | `false` |
 | `source.remote` | integration | object | MUST for `kind=remote` | `{ url, transport: streamable-http\|sse }` | none |
-| `source.remote.url` | integration | string | MUST for `kind=remote` | URI of the hosted MCP endpoint | none |
+| `source.remote.url` | integration | string | MUST for `kind=remote` | URI of the hosted MCP endpoint, or a URL template (§7.12) | none |
 | `source.remote.transport` | integration | string | MUST for `kind=remote` | `streamable-http\|sse` | none |
+| `variables` | integration | object | MAY | connection variables (§7.12): `{ schema }` | none |
+| `variables.schema` | integration | object | MUST if `variables` present | self-contained JSON Schema 2020-12; ≥1 property; each a required `string` named per `VARIABLE_NAME_REGEX`; local `$ref` only | none |
 | `auths` | integration | object | MUST | map keyed by `^[a-z][a-z0-9_]*$`; ≥1 entry | none |
 | `auths.<key>.type` | integration | string | MUST | `oauth2\|api_key\|basic\|mtls\|custom` | none |
-| `auths.<key>.issuer` | integration | string | SHOULD for oauth2 (not required when `source.kind` is `remote`) | OAuth/OIDC issuer; enables discovery. For a `remote` source, discovered at connect time from `source.remote.url` (§7.3) | none |
+| `auths.<key>.issuer` | integration | string | SHOULD for oauth2 (not required when `source.kind` is `remote`) | OAuth/OIDC issuer; enables discovery. For a `remote` source, discovered at connect time from `source.remote.url` (§7.3). MAY be a URL template (§7.12), excluding the endpoints and `resource` | none |
 | `auths.<key>.authorization_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote`) | RFC 8414 | none |
 | `auths.<key>.token_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote`) | RFC 8414 | none |
 | `auths.<key>.userinfo_endpoint` | integration | string | MAY | OIDC Discovery | none |
@@ -1373,7 +1450,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.delivery.http` | integration | object | MAY | `{ in, name, prefix?, value, encoding?, allow_server_override? }` | none |
 | `auths.<key>.delivery.http.in` | integration | string | MUST if `http` present | `header\|query\|cookie` (OpenAPI) | none |
 | `auths.<key>.delivery.http.name` | integration | string | MUST if `http` present | header/query/cookie parameter name (OpenAPI) | none |
-| `auths.<key>.delivery.http.value` | integration | string | MUST if `http` present | value template (`{$credential.*}`) | none |
+| `auths.<key>.delivery.http.value` | integration | string | MUST if `http` present | value template (`{$credential.*}`, `{$variable.*}`) | none |
 | `auths.<key>.delivery.http.prefix` | integration | string | MAY | literal prefix prepended to the rendered value (e.g. `"Bearer "`) | none |
 | `auths.<key>.delivery.http.encoding` | integration | string | MAY | `base64` (RFC 4648 §4), applied to `value` only | none |
 | `auths.<key>.delivery.http.allow_server_override` | integration | boolean | MAY | whether the source server may override the injected value | `false` |
@@ -1393,7 +1470,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.connect.login.identity_outputs` | integration | string[] | MAY | names of outputs that establish the connection identity | none |
 | `auths.<key>.connect.tool` | integration | object | MAY (custom only) | experimental alternative to `login`; tools used are auto-hidden (`hidden_tools`) | none |
 | `auths.<key>.connect.limits` | integration | object | MAY | `{ request_timeout_ms?, max_response_bytes? }` (positive numbers) | none |
-| `auths.<key>.authorized_uris` | integration | string[] | MAY | allowed upstream URI patterns (glob; credential templates, §7.9) | none |
+| `auths.<key>.authorized_uris` | integration | string[] | MAY | allowed upstream URI patterns (glob; credential or variable templates, §7.9) | none |
 | `auths.<key>.allow_all_uris` | integration | boolean | MAY | unrestricted upstream access | `false` |
 | `tools_policy` | integration | object | MAY | sparse per-tool policy table (augments canonical tool catalog of the referenced source); keys MUST resolve in the canonical catalog | none |
 | `tools_policy.<name>.required_scopes` | integration | object `{ <auth_key>: string[] }` | MAY | per-auth scopes a tool requires; each key a declared `auths` entry, scopes ⊆ that auth's `scope_catalog` (consent inference, not an exclusivity lock) | none |
@@ -1424,9 +1501,11 @@ SCOPED_NAME_REGEX    = ^@[a-z0-9]([a-z0-9-]*[a-z0-9])?\/[a-z0-9]([a-z0-9-]*[a-z0
 SCHEMA_VERSION_REGEX = ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$
 AUTH_KEY_REGEX       = ^[a-z][a-z0-9_]*$
 META_NAMESPACE_KEY   = ^([a-z0-9-]+(\.[a-z0-9-]+)+\/)?[A-Za-z0-9._-]+$
+VARIABLE_NAME_REGEX  = ^[a-z][a-z0-9_]*$
+URL_TEMPLATE_REGEX   = ^(?:\{\$variable\.[a-z][a-z0-9_]*\}|https:\/\/\{\$variable\.[a-z][a-z0-9_]*\}(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\/?$
 ```
 
-Semantic-version and range validation are delegated to semver parsing functions rather than regexes.
+Patterns are ECMA-262 regular expressions, the dialect of JSON Schema `pattern`, and MUST match the whole value. Semantic-version and range validation are delegated to semver parsing functions rather than regexes.
 
 ### Appendix C. Default Values
 

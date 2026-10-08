@@ -37,6 +37,10 @@ export {
   authMethod,
   tokenEndpointAuthMethodEnum,
   credentialsConfig,
+  // connection variables (§7.12)
+  variablesConfig,
+  VARIABLE_NAME_REGEX,
+  URL_TEMPLATE_REGEX,
   deliverySchema,
   deliveryEncodingEnum,
   connectSchema,

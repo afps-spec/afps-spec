@@ -280,8 +280,19 @@
               "type": "object",
               "properties": {
                 "url": {
-                  "type": "string",
-                  "format": "uri"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uri",
+                      "not": {
+                        "pattern": "\\{\\$"
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^(?:\\{\\$variable\\.[a-z][a-z0-9_]*\\}|https:\\/\\/\\{\\$variable\\.[a-z][a-z0-9_]*\\}(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\\/?$"
+                    }
+                  ]
                 },
                 "transport": {
                   "type": "string",
@@ -319,6 +330,55 @@
         }
       ]
     },
+    "variables": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "allOf": [
+            {
+              "$ref": "https://json-schema.org/draft/2020-12/schema"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "properties"
+              ],
+              "properties": {
+                "type": {
+                  "const": "object"
+                }
+              }
+            },
+            {
+              "properties": {
+                "properties": {
+                  "minProperties": 1,
+                  "propertyNames": {
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "const": "string"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema"
+      ],
+      "additionalProperties": {}
+    },
     "auths": {
       "type": "object",
       "propertyNames": {
@@ -339,20 +399,40 @@
             ]
           },
           "issuer": {
-            "type": "string",
-            "format": "uri"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri",
+                "not": {
+                  "pattern": "\\{\\$"
+                }
+              },
+              {
+                "type": "string",
+                "pattern": "^(?:\\{\\$variable\\.[a-z][a-z0-9_]*\\}|https:\\/\\/\\{\\$variable\\.[a-z][a-z0-9_]*\\}(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\\/?$"
+              }
+            ]
           },
           "authorization_endpoint": {
             "type": "string",
-            "format": "uri"
+            "format": "uri",
+            "not": {
+              "pattern": "\\{\\$"
+            }
           },
           "token_endpoint": {
             "type": "string",
-            "format": "uri"
+            "format": "uri",
+            "not": {
+              "pattern": "\\{\\$"
+            }
           },
           "userinfo_endpoint": {
             "type": "string",
-            "format": "uri"
+            "format": "uri",
+            "not": {
+              "pattern": "\\{\\$"
+            }
           },
           "token_endpoint_auth_method": {
             "type": "string",
@@ -373,7 +453,10 @@
             }
           },
           "resource": {
-            "type": "string"
+            "type": "string",
+            "not": {
+              "pattern": "\\{\\$"
+            }
           },
           "authorization_params": {
             "type": "object",
@@ -820,7 +903,20 @@
           "authorized_uris": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "anyOf": [
+                {
+                  "not": {
+                    "pattern": "\\{\\$variable\\."
+                  }
+                },
+                {
+                  "pattern": "^(\\{\\$variable\\.[a-z][a-z0-9_]*\\})(?:\\/[^{}]*)?$"
+                },
+                {
+                  "pattern": "^([A-Za-z][A-Za-z0-9+.-]*:\\/\\/\\{\\$variable\\.[a-z][a-z0-9_]*\\}(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?)(?:[/?#][^{}]*)?$"
+                }
+              ]
             }
           },
           "allow_all_uris": {
@@ -904,6 +1000,48 @@
               "required": [
                 "type"
               ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "oauth2"
+                },
+                "issuer": {
+                  "pattern": "\\{\\$"
+                }
+              },
+              "required": [
+                "type",
+                "issuer"
+              ]
+            },
+            "then": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "authorization_endpoint"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "token_endpoint"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "userinfo_endpoint"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "resource"
+                    ]
+                  }
+                ]
+              }
             }
           }
         ]
@@ -1031,6 +1169,85 @@
                   }
                 }
               ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": {
+              "kind": {
+                "const": "remote"
+              },
+              "remote": {
+                "properties": {
+                  "url": {
+                    "pattern": "\\{\\$"
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "remote"
+            ]
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "then": {
+        "properties": {
+          "auths": {
+            "additionalProperties": {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "oauth2"
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "issuer": {
+                    "pattern": "\\{\\$"
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "authorization_endpoint"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "token_endpoint"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "userinfo_endpoint"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "resource"
+                      ]
+                    }
+                  ]
+                }
+              }
             }
           }
         }
