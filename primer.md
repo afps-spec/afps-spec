@@ -259,8 +259,9 @@ An agent composes skills, MCP servers, and integrations as dependencies. The dia
   ║    dependencies.mcp_servers["@acme/fetch-json"]   = "^1.0.0"            ║
   ║    dependencies.integrations["@acme/gmail"]       = "^1.0.0"            ║
   ║    integrations_configuration["@acme/gmail"]      = { tools: […],       ║
-  ║                                                       scopes:  […],      ║
-  ║                                                       auth_key:"oauth" } ║
+  ║                                                       scopes:  […],     ║
+  ║                                                       auth_key:"oauth", ║
+  ║                                                       required: true }  ║
   ╠═════════════════════════════════════════════════════════════════════════╣
   ║                  ↓ catalog resolution (semver range → concrete version) ║
   ╠═════════════════════ RUNTIME (resolved package set) ════════════════════╣
@@ -276,7 +277,7 @@ An agent composes skills, MCP servers, and integrations as dependencies. The dia
 
 The agent says *what to accomplish*. The dependencies provide *how* — reusable capabilities and service connections the agent draws on at runtime. A *credentialed* MCP server (Gmail) is wrapped by an integration whose `source.kind: "local"` points at it; the runtime applies the auth layer on top. A *utility* MCP server (fetch-json) needs no credentials and is a freestanding dependency.
 
-All package types use a single `dependencies` field, grouped into three maps (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to a semver range. Per-integration configuration (`tools`, `scopes`, `auth_key`) lives in the agent's separate top-level `integrations_configuration` map, keyed by the same integration id. A registry resolves and installs these packages when the parent package is published or imported; a runtime loads them when the agent executes.
+All package types use a single `dependencies` field, grouped into three maps (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to a semver range. Per-integration configuration (`tools`, `scopes`, `auth_key`, `required`) lives in the agent's separate top-level `integrations_configuration` map, keyed by the same integration id. A registry resolves and installs these packages when the parent package is published or imported; a runtime loads them when the agent executes.
 
 ```json
 {
@@ -289,13 +290,14 @@ All package types use a single `dependencies` field, grouped into three maps (`s
     "@acme/gmail": {
       "tools": ["list_messages"],
       "scopes": ["gmail.readonly"],
-      "auth_key": "oauth"
+      "auth_key": "oauth",
+      "required": true
     }
   }
 }
 ```
 
-The `dependencies` object is grouped by package type (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to a semver range. Per-integration agent configuration is declared separately in `integrations_configuration`.
+The `dependencies` object is grouped by package type (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to a semver range. Per-integration agent configuration is declared separately in `integrations_configuration`; `required: true` marks an integration without whose credential no execution of the agent starts; when it is absent or `false`, an execution may start without one, and the agent then sees the integration as unavailable.
 
 See [spec.md, Section 4.1](./spec.md#41-dependency-declaration).
 

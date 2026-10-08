@@ -34,6 +34,15 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
 
 - §11 normative reference [PSL], the Public Suffix List.
 
+- §4.4 `integrations_configuration.<id>.required` (boolean, default `false`,
+  #27): when `true`, a consumer MUST NOT start an execution of the agent unless
+  a credential for the integration — for the auth method `auth_key` selects,
+  when set — is provided to that execution, whether or not `tools` selects any
+  tool. When `false` or absent, a consumer MAY start the execution without
+  one; it then MUST present the integration to the agent as unavailable (§6.1)
+  and SHOULD report it to whoever started the execution. §3.2, §4.1, §6.1 and
+  Appendix A list the field.
+
 ### Changed
 
 - **Breaking:** §7.7 evaluation profile. For `success_criteria` and Selector
@@ -108,6 +117,16 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
   alone. Under `https://*.amazonaws.com/**`, `sts.amazonaws.com` still
   receives it, `s3.amazonaws.com` (itself a public suffix) does not.
 
+- **Breaking:** §4.4 an `integrations_configuration` entry whose `required` is
+  not a boolean no longer conforms; it was an unknown field until now. A minor
+  revision only, as `0.x` makes no back-compat promise.
+
+- Editorial: the §4.1 example declared an integration with the object form
+  `{ "version", "scopes" }` that §4.1 forbids; it now uses a semver-range string,
+  followed by a separate `integrations_configuration` example.
+- Editorial: `examples/agent-full` marks its Gmail integration
+  `"required": true`.
+
 ### Migration
 
 Producers: for `variables`, nothing to change; it is opt-in. Consumers: validate with
@@ -117,6 +136,25 @@ that declare `variables`.
 
 `connect.login`: see the two §7.7 entries under Changed. Producers rewrite a form
 outside the evaluation profile within it; consumers evaluate at least the profile.
+
+`required`: producers set `"required": true` on each integration without whose
+credential the agent cannot do its work; manifests without it are unchanged.
+Consumers MUST NOT start an execution without a credential for a `required`
+integration; a consumer that already refuses every execution lacking a credential
+for any declared integration stays conforming. Validate with `@afps-spec/schema`
+0.9.0.
+
+## Schema `@afps-spec/schema@0.9.0` — 2026-10-08
+
+A manifest that validated under 0.8.0 still validates unless an
+`integrations_configuration` entry carried a non-boolean `required`. Minor bump
+only: `0.x` makes no back-compat promise (as for 0.4.0 and 0.8.0).
+
+- `integrations_configuration.<id>.required: boolean`, optional (§4.4, #27).
+  The schema constrains the type only; consumers apply the default `false`.
+- **Breaking:** a non-boolean `required` (`"yes"`, `1`) is rejected. 0.8.0
+  accepted any value there, the configuration entry being a loose object. The
+  generated `v0/agent.schema.json` declares `{ "type": "boolean" }` for it.
 
 ## Schema `@afps-spec/schema@0.8.0` — 2026-10-08
 

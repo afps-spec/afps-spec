@@ -91,7 +91,7 @@ ZIP both files together (using the `.afps` extension by convention) — that's a
 
 ### How an agent composes its dependencies
 
-A real agent declares its dependencies in three named maps (`skills`, `mcp_servers`, `integrations`), each a flat record of package id to semver range. Per-integration configuration (`tools`, `scopes`, `auth_key`) lives in the separate top-level `integrations_configuration` map. A credentialed MCP server is normally wrapped by an integration whose `source.kind: "local"` points at it; a freestanding `mcp_servers` dependency is appropriate only for utility servers that need no credentials.
+A real agent declares its dependencies in three named maps (`skills`, `mcp_servers`, `integrations`), each a flat record of package id to semver range. Per-integration configuration (`tools`, `scopes`, `auth_key`, `required`) lives in the separate top-level `integrations_configuration` map. A credentialed MCP server is normally wrapped by an integration whose `source.kind: "local"` points at it; a freestanding `mcp_servers` dependency is appropriate only for utility servers that need no credentials.
 
 ```text
   ┌──────────────────────────────────────────────────────────────────────┐
@@ -105,7 +105,8 @@ A real agent declares its dependencies in three named maps (`skills`, `mcp_serve
   │  "integrations_configuration": {                                     │
   │    "@acme/gmail": { "tools":    ["list_messages"],                   │
   │                     "scopes":   ["gmail.read"],                      │
-  │                     "auth_key": "oauth" }                            │
+  │                     "auth_key": "oauth",                             │
+  │                     "required": true }                               │
   │  }                                                                   │
   └────────┬──────────────────────┬───────────────────────┬──────────────┘
            │ resolves against     │                       │
