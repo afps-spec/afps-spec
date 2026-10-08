@@ -33,12 +33,18 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
   URL's origin.
 
 - §11 normative reference [PSL], the Public Suffix List.
-- §7.7 evaluation profile: a consumer MAY evaluate a `simple` Criterion only as
-  `<expr> == <operand>` (exactly one `==`; no other `=`, `!`, `<`, `>`, `&&`,
-  `||`, `(`, `)` outside a quoted literal; each side a runtime expression or a
-  literal) and MAY omit `xpath` (Criterion and Selector Object). A consumer that
+- §7.7 evaluation profile, the floor every consumer evaluates: a `simple`
+  Criterion `<expr> == <operand>` (exactly one `==`; no other `=`, `!`, `<`,
+  `>`, `&&`, `||`, `(`, `)` outside a quoted literal; each side a runtime
+  expression or a literal — a number, `true`, `false`, `null`, a single-quoted
+  string with `''` for a quote, optionally a double-quoted string — at least one
+  side an expression), `regex` and `jsonpath` Criteria, `jsonpath` and
+  `jsonpointer` Selector Objects. Whether string equality ignores case is left
+  open. Anything else, `xpath` included, a consumer MAY omit; a consumer that
   does not support a form a manifest declares MUST reject the manifest at
-  install or save, not fail when a connection is attempted.
+  install or save, not fail when a connection is attempted. A manifest meant
+  for every consumer writes one `simple` Criterion per comparison, omits
+  `success_criteria` to require HTTP 2xx, and declares no `xpath`.
 
 ### Changed
 
@@ -96,12 +102,15 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
 
 ### Migration
 
-Producers: nothing to change; `variables` is opt-in. A manifest meant for every
-consumer writes one `simple` Criterion per `==` comparison, omits
-`success_criteria` to require HTTP 2xx, and declares no `xpath`. Consumers: validate with
+Producers: nothing to change; `variables` is opt-in. Consumers: validate with
 `@afps-spec/schema` 0.8.0 — under 0.7.0, `https://{$variable.tenant}.example.com/mcp`
 parses as a literal URL; until variables are implemented, refuse integrations
 that declare `variables`.
+
+A `connect.login` with a compound or grouped `simple` condition, an unquoted
+string literal, or `xpath` may be rejected by a consumer that evaluates only the
+§7.7 profile: rewrite it within the profile (one Criterion per comparison,
+`success_criteria` omitted for HTTP 2xx, `regex` or `jsonpath` otherwise).
 
 ## Schema `@afps-spec/schema@0.8.0` — 2026-10-08
 
