@@ -32,6 +32,8 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
   rendered `issuer` (a template over the URL's variables) or share the rendered
   URL's origin.
 
+- §11 normative reference [PSL], the Public Suffix List.
+
 ### Changed
 
 - **Breaking:** §7.3 client credentials an authorization server issues are bound
@@ -59,6 +61,32 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
 - **Breaking:** §8.7 `connect.login` egress controls are REQUIRED when the request
   URL carries a `{{<name>}}` placeholder, and egress controls cover every URL obtained
   from a response (body, headers, redirects) to a request to a user-supplied URL.
+
+- **Breaking:** §7.9/§8.6 a host wildcard in `authorized_uris` is bounded only
+  when the labels right of its last wildcard (its literal part) contain a
+  registrable domain per the Public Suffix List (https://publicsuffix.org/),
+  ICANN and private sections, and a host one label below, under a label no
+  list rule names, keeps its registrable domain there. The previous rule (a
+  wildcard outside the host's last two labels) accepted `https://*.co.uk/**`
+  and `https://*.github.io/**`; both are now unbounded, so an auth method that
+  injects its credential MUST NOT declare them. `https://*.example.com/**` and
+  `https://*.example.co.uk/**` stay bounded; a literal host and a
+  credential-template host are unchanged. The rule also names entries
+  consumers already treated as unbounded: a wildcard in the scheme, in an IP
+  literal, or in a host that ends in a number (WHATWG).
+  A wildcard beside a credential template counts each template as one label,
+  and the rendered entry is judged again before a credential is sent.
+- **Breaking:** §7.9/§8.6 at run time, for a target an agent or an upstream
+  response chooses (an agent-issued request, a redirect hop, an intercepted
+  request), a consumer MUST NOT place a credential in the request (injected,
+  or substituted into the URL, a header or the body) when it is matched only
+  through host wildcards whose literal part does not contain the target's
+  registrable domain, nor forward it on such a redirect hop. A URL the
+  manifest author or the connecting user fixes (a remote MCP server URL, a
+  `connect` login URL), `env`/`files` delivery and an integration's own egress
+  into which the consumer places no credential keep the allowlist match
+  alone. Under `https://*.amazonaws.com/**`, `sts.amazonaws.com` still
+  receives it, `s3.amazonaws.com` (itself a public suffix) does not.
 
 ### Migration
 
