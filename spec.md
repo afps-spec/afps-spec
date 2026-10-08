@@ -1052,7 +1052,7 @@ Value templates reference the connection's credential fields as `{$credential.<f
 - **`success_criteria`** — an array of Arazzo Criterion objects (`condition`, optional `context`, optional `type` of `simple`/`regex`/`jsonpath`/`xpath`). When omitted, success is HTTP 2xx.
 - **`outputs`** — a map of named outputs. Each value is one of:
   - an **Arazzo runtime-expression string** (Arazzo §5.9): `$statusCode`, `$response.body`, `$response.body#/{json-pointer}` ([RFC 6901]), `$response.header.{name}`;
-  - an **Arazzo Selector Object** (Arazzo 1.1 §5.8.13) with `{ context (runtime expression), selector (string), type ("jsonpath" | "xpath" | "jsonpointer") }`. Consumers MUST resolve `jsonpath` per [RFC 9535] (restricted to singular queries, see below), `jsonpointer` per [RFC 6901], and `xpath` per [XML Path Language 3.1];
+  - an **Arazzo Selector Object** (Arazzo 1.1 §5.8.13) with `{ context (runtime expression), selector (string), type ("jsonpath" | "xpath" | "jsonpointer") }`. Consumers MUST resolve `jsonpath` per [RFC 9535] (restricted to singular queries, see below), `jsonpointer` per [RFC 6901], and, when they support it (see the evaluation profile below), `xpath` per [XML Path Language 3.1];
   - an **AFPS extractor object** that extends Arazzo for cases the Selector Object cannot express:
     - `{ "from": "cookie", "name": "<cookie-name>" }`;
     - `{ "from": "jwt", "token": "{$credential.<name>}", "path": "/<json-pointer>" }`, where `<name>` is a declared output that is not itself a `jwt` extractor;
@@ -1062,6 +1062,8 @@ Value templates reference the connection's credential fields as `{$credential.<f
 - **`limits`** — OPTIONAL request guardrails: `request_timeout_ms`, `max_response_bytes`.
 
 **JSONPath.** Every JSONPath in an integration manifest — a `jsonpath` Selector Object `selector`, the `condition` of a `jsonpath` Criterion, and the values of `identity_claims` (§7.4) — MUST be an absolute singular query ([RFC 9535] §2.3.5.1): `$` followed only by name segments (`.name`, `['name']`) and index segments (`[0]`, `[-1]`), e.g. `$.profile.id`. Wildcards, slices, filters, unions, and descendant segments MUST NOT be used; consumers MUST reject a manifest that uses them. A `jsonpath` Criterion is met when its query selects a value other than `null`, an empty string, or an empty array.
+
+**Evaluation profile.** A consumer MAY support a subset of the Criterion and Selector Object forms: it MAY evaluate a `simple` Criterion only in the equality form `<expr> == <operand>` (one `==`, and no other Arazzo operator outside a quoted literal), and it MAY omit `xpath`, as a Criterion `type` and as a Selector Object `type`. A consumer that does not support a form a manifest declares MUST reject the manifest when it is installed or saved; it MUST NOT accept it and fail when a connection is attempted. A manifest meant for every consumer writes one `simple` Criterion per comparison (all Criteria must be met) and uses `regex` or `jsonpath` for checks on the response body.
 
 **Gating rule.** A `delivery.*` value template MAY only reference declared `connect` outputs, as `{$credential.<output>}` (or, for the orchestrated `tool` mode, its declared `produces`), and connection variables as `{$variable.<name>}`, within the limits §7.12 sets for an issued credential. A delivery referencing anything else — for example a bootstrap login secret — is a manifest error.
 
