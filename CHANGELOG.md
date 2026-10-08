@@ -1,5 +1,99 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-08
+
+Normative changes to the 0.3 draft (no spec-version bump, as for the
+2026-09-30 revision).
+
+### Added
+
+- §7.12 connection variables: a top-level `variables: { schema }` of one or more
+  required, non-secret `string` values the user supplies before any
+  authorization step, shared by every auth method and referenced as
+  `{$variable.<name>}` in value templates, `authorized_uris` and URL templates
+  only. They are not credentials (§8.3 does not apply); changing one stops the
+  connection from using its credential until a new one is acquired. A consumer
+  rejects a value that does not validate against `variables.schema`; a variable
+  renders either as a URL or as host labels, never both. On an oauth2
+  or `connect` auth, a value template references only variables of the template
+  choosing the upstream its credential is for.
+- §7.12 URL templates for `source.remote.url` and an oauth2 `issuer`: a URL form (`{$variable.base_url}/mcp`) or a host
+  form (`https://{$variable.tenant}.example.com/mcp`) with a strict literal path,
+  rendered by concatenation to `https` and WHATWG-serialized. Rendered and
+  returned URLs compare equal after stripping every trailing `/`.
+- §7.3 a templated issuer, or a templated `source.remote.url`, makes the
+  authorization server chosen per connection: endpoints and `resource` then come
+  only from discovery (never from the user), the client is acquired per rendered
+  authorization server and integration, client assertions name the validated
+  `issuer` as their sole audience, and mix-up defence is REQUIRED (RFC 9207 `iss` whenever
+  present and required where advertised; otherwise a redirect URI distinct from
+  every other authorization server's, checked on receipt; RFC 9700 §4.4). With a
+  templated `source.remote.url`, the advertised authorization server MUST be the
+  rendered `issuer` (a template over the URL's variables) or share the rendered
+  URL's origin.
+
+### Changed
+
+- **Breaking:** §7.3 client credentials an authorization server issues are bound
+  to it (the `issuer` of its validated metadata) and presented only to its
+  endpoints — never to a manifest-declared endpoint that differs from them — and
+  every client assertion carries a single audience naming that server. Manifest
+  overrides of discovered fields stop where client binding begins.
+- **Breaking:** §7.3 remote MCP authorization fetches protected-resource metadata
+  in the MCP order (challenge, path-inserted, root) and uses a document only when
+  its `resource` is identical to the identifier its location was derived from
+  (RFC 9728 §3.3): `source.remote.url`, or its origin for the root location.
+- **Breaking:** §7.6/§7.7 the template grammar gains `{$variable.<name>}`;
+  consumers that reject it must treat integrations declaring `variables` as
+  unusable (§7.12).
+- **Breaking:** §7.9 authority-form values are non-empty and ports render to
+  1–65535 without leading zeros; an `authorized_uris` entry MAY reference a
+  variable in the URL form or as the host of the authority form. On an oauth2
+  or `connect` auth, whose credential is issued for an upstream (an oauth2
+  auth's `source.remote.url` for a `remote` source, else its `issuer`; a
+  `connect.tool`'s `source.remote.url`), every entry MUST carry a variable and
+  share that upstream's origin when it is a URL template, and none carries a
+  variable when it is fixed.
+- **Breaking:** §8.6 a templated `source.remote.url` REQUIRES the RFC 8707
+  resource indicator.
+- **Breaking:** §8.7 `connect.login` egress controls are REQUIRED when the request
+  URL carries a `{{<name>}}` placeholder, and egress controls cover every URL obtained
+  from a response (body, headers, redirects) to a request to a user-supplied URL.
+
+### Migration
+
+Producers: nothing to change; `variables` is opt-in. Consumers: validate with
+`@afps-spec/schema` 0.8.0 — under 0.7.0, `https://{$variable.tenant}.example.com/mcp`
+parses as a literal URL; until variables are implemented, refuse integrations
+that declare `variables`.
+
+## Schema `@afps-spec/schema@0.8.0` — 2026-10-08
+
+A manifest that validated under 0.7.0 still validates unless it carried:
+
+- a top-level `variables` extension;
+- a `{$` inside `source.remote.url`, an oauth2 `issuer`, an endpoint, or
+  `resource`;
+- the string `{$variable.` anywhere else under `source`, `auths` (outside
+  `credentials.schema`) or `setup_guide`, keys included — in `authorized_uris`, a
+  delivery `value`, `prefix`, `authorization_params`, `connect.login.request`, …
+  — since such a reference must now name a declared variable, in a place §7.12
+  allows.
+
+- `variables: { schema }`; `source.remote.url` and `issuer` accept an absolute
+  URL or a `URL_TEMPLATE_REGEX` template; the oauth2 endpoints and `resource`
+  never accept `{$`.
+- Zod enforces the §7.12 variable rules (at least one, required, string,
+  named), well-formed and declared references, the allowed placements of
+  `{$variable.*}`, the §7.9 forms and shared origin of variable-bearing
+  `authorized_uris` entries, the variables of value templates on issued
+  credentials, no variable in a map key, and the §7.3 per-connection rules.
+  The generated JSON Schema mirrors the structural ones: variable shape, template
+  branches, the §7.9 forms of variable-bearing `authorized_uris` entries,
+  endpoints left to discovery under a templated issuer or remote URL.
+- New exports `variablesConfig`, `VARIABLE_NAME_REGEX`, `URL_TEMPLATE_REGEX`;
+  new example `examples/integration-self-hosted/`.
+
 ## Spec 0.3 revision — 2026-09-30
 
 Normative changes to the 0.3 draft (no spec-version bump; `0.x` makes no

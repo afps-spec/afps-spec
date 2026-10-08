@@ -14,7 +14,13 @@
 import { toJSONSchema } from "zod/v4/core";
 import { resolve, dirname } from "node:path";
 import { writeFile, mkdir, readFile } from "node:fs/promises";
-import { createSchemas, afpsJsonSchemaOverride } from "./schemas.ts";
+import {
+  createSchemas,
+  afpsJsonSchemaOverride,
+  VARIABLE_AUTHORITY_FORM_ENTRY,
+  VARIABLE_NAME_REGEX,
+  VARIABLE_URL_FORM_ENTRY,
+} from "./schemas.ts";
 
 const MAJOR = 0;
 const VERSION_TAG = `v${MAJOR}`;
@@ -30,14 +36,38 @@ const isCheck = process.argv.includes("--check");
  * JSON-only validators reject the same shapes the Zod runtime rejects.
  *
  * Keep these in lockstep with the `.superRefine` logic in `schemas.ts`
- * (§7.3, §7.5, §7.6, §7.7, §3.4).
+ * (§7.3, §7.5, §7.6, §7.7, §7.12, §3.4).
  */
 function applyCrossFieldRules(filename: string, schema: Record<string, any>): void {
   if (filename === "integration.schema.json") {
     // §3.5 — at least one auth method.
     schema.properties.auths.minProperties = 1;
 
+    // §7.12 — the literal branch of `source.remote.url` and `issuer` excludes `{$`, so a
+    // template is accepted only by the URL_TEMPLATE_REGEX branch (`format: "uri"` is an
+    // annotation for most JSON Schema validators).
+    const NO_TEMPLATE = { pattern: "\\{\\$" };
     const method = schema.properties.auths.additionalProperties as Record<string, any>;
+    const remote = schema.properties.source.oneOf.find(
+      (variant: Record<string, any>) => variant.properties.kind.const === "remote",
+    );
+    for (const field of [remote.properties.remote.properties.url, method.properties.issuer]) {
+      field.anyOf[0].not = NO_TEMPLATE;
+    }
+
+    // §7.12 — at least one variable, each named per VARIABLE_NAME_REGEX and of
+    // `type: "string"`. (Every variable listed in `required`, and placeholders
+    // naming declared variables, relate values to each other: Zod only.)
+    schema.properties.variables.properties.schema.allOf.push({
+      properties: {
+        properties: {
+          minProperties: 1,
+          propertyNames: { pattern: VARIABLE_NAME_REGEX.source },
+          additionalProperties: { type: "object", properties: { type: { const: "string" } }, required: ["type"] },
+        },
+      },
+    });
+
     method.allOf = [
       // §7.5 — credentials.schema required for api_key/basic/mtls/custom.
       {
@@ -61,6 +91,23 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
         },
       },
     ];
+
+    // §7.3 — endpoints and `resource` are never templated, and a templated issuer
+    // leaves them to discovery.
+    // §7.9 — an `authorized_uris` entry carrying a variable takes the URL form or the
+    // authority form with the variable filling the host.
+    method.properties.authorized_uris.items.anyOf = [
+      { not: { pattern: "\\{\\$variable\\." } },
+      { pattern: VARIABLE_URL_FORM_ENTRY.source },
+      { pattern: VARIABLE_AUTHORITY_FORM_ENTRY.source },
+    ];
+
+    const DISCOVERED = ["authorization_endpoint", "token_endpoint", "userinfo_endpoint", "resource"];
+    for (const field of DISCOVERED) method.properties[field].not = NO_TEMPLATE;
+    method.allOf.push({
+      if: { properties: { type: { const: "oauth2" }, issuer: { pattern: "\\{\\$" } }, required: ["type", "issuer"] },
+      then: { not: { anyOf: DISCOVERED.map((field) => ({ required: [field] })) } },
+    });
 
     // §7.3 — oauth2 requires issuer (discovery) OR both endpoints, EXCEPT when
     // the integration `source.kind` is `remote`: a remote MCP server is an
@@ -97,6 +144,36 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
         },
       },
     ];
+    // §7.3 — a templated `source.remote.url` leaves every oauth2 auth's endpoints
+    // and `resource` to remote MCP authorization; an issuer is then a template
+    // (over the URL's variables: Zod only).
+    schema.allOf.push({
+      if: {
+        properties: {
+          source: {
+            properties: {
+              kind: { const: "remote" },
+              remote: { properties: { url: { pattern: "\\{\\$" } }, required: ["url"] },
+            },
+            required: ["kind", "remote"],
+          },
+        },
+        required: ["source"],
+      },
+      then: {
+        properties: {
+          auths: {
+            additionalProperties: {
+              if: { properties: { type: { const: "oauth2" } }, required: ["type"] },
+              then: {
+                properties: { issuer: { pattern: "\\{\\$" } },
+                not: { anyOf: DISCOVERED.map((field) => ({ required: [field] })) },
+              },
+            },
+          },
+        },
+      },
+    });
 
     // §7.6 — ≥1 delivery channel; http exclusive of env/files.
     const delivery = method.properties.delivery as Record<string, any>;

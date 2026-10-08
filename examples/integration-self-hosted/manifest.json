@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schemas.afps.dev/v0/integration.schema.json",
+  "name": "@example/forge",
+  "version": "1.0.0",
+  "type": "integration",
+  "schema_version": "0.3",
+  "display_name": "Forge",
+  "description": "A code forge offered as a hosted service and as a self-hosted product. One integration serves both: the instance URL is a connection variable, so the remote MCP endpoint, its authorization server, and the credential's allowed upstream are all resolved per connection.",
+  "keywords": ["developer-tools"],
+  "source": {
+    "kind": "remote",
+    "remote": {
+      "url": "{$variable.base_url}/api/mcp",
+      "transport": "streamable-http"
+    }
+  },
+  "variables": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "title": "Instance URL",
+          "description": "Root URL of the instance, including any path prefix it is served under. Keep the default for the hosted service.",
+          "default": "https://forge.example.com"
+        }
+      },
+      "required": ["base_url"]
+    }
+  },
+  "auths": {
+    "oauth": {
+      "type": "oauth2",
+      "token_endpoint_auth_method": "none",
+      "code_challenge_methods_supported": ["S256"],
+      "default_scopes": ["mcp"],
+      "delivery": {
+        "http": {
+          "in": "header",
+          "name": "Authorization",
+          "prefix": "Bearer ",
+          "value": "{$credential.access_token}"
+        }
+      },
+      "authorized_uris": ["{$variable.base_url}/api/**"]
+    },
+    "token": {
+      "type": "api_key",
+      "credentials": {
+        "schema": {
+          "type": "object",
+          "properties": {
+            "token": {
+              "type": "string",
+              "title": "Personal access token",
+              "description": "A token created on the instance, under the user's profile settings."
+            }
+          },
+          "required": ["token"]
+        }
+      },
+      "delivery": {
+        "http": {
+          "in": "header",
+          "name": "Authorization",
+          "prefix": "Bearer ",
+          "value": "{$credential.token}"
+        }
+      },
+      "authorized_uris": ["{$variable.base_url}/api/**"]
+    }
+  }
+}

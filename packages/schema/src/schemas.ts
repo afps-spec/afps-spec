@@ -31,11 +31,47 @@ import Ajv2020 from "ajv/dist/2020";
 const SLUG_PATTERN = "[a-z0-9]([a-z0-9-]*[a-z0-9])?";
 const SCOPED_NAME_REGEX = new RegExp(`^@${SLUG_PATTERN}\\/${SLUG_PATTERN}$`);
 
+const IDENTIFIER_PATTERN = "[a-z][a-z0-9_]*";
+
 /** AUTH_KEY_REGEX — keys of the integration `auths` map (§7.2, Appendix B). */
-const AUTH_KEY_REGEX = /^[a-z][a-z0-9_]*$/;
+const AUTH_KEY_REGEX = new RegExp(`^${IDENTIFIER_PATTERN}$`);
+
+/** VARIABLE_NAME_REGEX — names of an integration's connection variables (§7.12, Appendix B). */
+export const VARIABLE_NAME_REGEX = new RegExp(`^${IDENTIFIER_PATTERN}$`);
+
+const VARIABLE_PLACEHOLDER = `\\{\\$variable\\.${IDENTIFIER_PATTERN}\\}`;
+/** One `{$variable.<name>}` placeholder; group 1 is the name. */
+const VARIABLE_REF = new RegExp(`\\{\\$variable\\.(${IDENTIFIER_PATTERN})\\}`, "g");
+const LABEL = "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
+const LAST_LABEL = "[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?";
+const SEGMENT = "(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+";
+
+/**
+ * URL_TEMPLATE_REGEX — a URL template (§7.12, Appendix B): the URL form
+ * (`{$variable.<name>}` heading the value) or the host form (`https://`, a
+ * placeholder, literal domain labels), then a literal path.
+ */
+export const URL_TEMPLATE_REGEX = new RegExp(
+  `^(?:${VARIABLE_PLACEHOLDER}|https:\\/\\/${VARIABLE_PLACEHOLDER}(?:\\.${LABEL})*\\.${LAST_LABEL})(?:\\/${SEGMENT})*\\/?$`,
+);
 
 /** Octal file-mode string, e.g. "0400" (§7.6). */
 const FILE_MODE_REGEX = /^0[0-7]{3}$/;
+
+const URL_TEMPLATE_ERROR =
+  "Must be a URL template: {$variable.<name>} heading the value, or https://{$variable.<name>}.<literal domain>, then a literal path";
+const notTemplated = (value: string) => !value.includes("{$");
+/**
+ * A field that MAY be a URL template (§7.12): `source.remote.url`, an oauth2
+ * `issuer`. That every placeholder names a declared variable is checked by
+ * `integrationManifestSchema`.
+ */
+const urlOrVariableTemplate = z.union([
+  z.url().refine(notTemplated, { error: URL_TEMPLATE_ERROR }),
+  z.string().regex(URL_TEMPLATE_REGEX, { error: URL_TEMPLATE_ERROR }),
+]);
+/** A URL-valued field that is never templated (§7.3). */
+const literalUrl = z.url().refine(notTemplated, { error: "Must not be templated; only issuer is (§7.3)" });
 
 /** A scoped AFPS package identity `@scope/name` (§2.2). */
 export const scopedName = z.string().regex(SCOPED_NAME_REGEX, {
@@ -290,7 +326,7 @@ const localSource = z.looseObject({
 const remoteSource = z.looseObject({
   kind: z.literal("remote"),
   remote: z.looseObject({
-    url: z.url(),
+    url: urlOrVariableTemplate,
     transport: transportEnum,
   }),
 });
@@ -343,6 +379,14 @@ const scopeCatalogEntry = z.looseObject({
 
 /** Credential schema container for api_key/basic/mtls/custom (§7.5). */
 export const credentialsConfig = z.looseObject({
+  schema: schemaObject,
+});
+
+/**
+ * Connection variables container (§7.12): non-secret, per-connection values the
+ * user supplies before any authorization step, shared by every auth method.
+ */
+export const variablesConfig = z.looseObject({
   schema: schemaObject,
 });
 
@@ -475,14 +519,16 @@ const uriRestrictionFields = {
  */
 export const authMethod = z.looseObject({
   type: authTypeEnum,
-  // oauth2 (§7.3) — endpoints and issuer are absolute URLs (SSRF surface, §8.7)
-  issuer: z.url().optional(),
-  authorization_endpoint: z.url().optional(),
-  token_endpoint: z.url().optional(),
-  userinfo_endpoint: z.url().optional(),
+  // oauth2 (§7.3) — endpoints and issuer are absolute URLs (SSRF surface, §8.7);
+  // only the issuer MAY be a URL template, for a per-connection authorization
+  // server (§7.12)
+  issuer: urlOrVariableTemplate.optional(),
+  authorization_endpoint: literalUrl.optional(),
+  token_endpoint: literalUrl.optional(),
+  userinfo_endpoint: literalUrl.optional(),
   token_endpoint_auth_method: tokenEndpointAuthMethodEnum.optional(),
   code_challenge_methods_supported: z.array(z.string()).optional(),
-  resource: z.string().optional(),
+  resource: z.string().refine(notTemplated, { error: "Must not be templated; only issuer is (§7.3)" }).optional(),
   authorization_params: z.record(z.string(), z.unknown()).optional(),
   // scopes (§7.4)
   default_scopes: z.array(z.string()).optional(),
@@ -606,6 +652,207 @@ function refineAuthMethod(
         message:
           "delivery.http (proxy injection) is mutually exclusive with delivery.env/files (server holds the secret)",
       });
+    }
+  }
+}
+
+/** oauth2 fields an auth method with a per-connection authorization server leaves to discovery (§7.3). */
+const DISCOVERED_OAUTH_FIELDS = ["authorization_endpoint", "token_endpoint", "userinfo_endpoint", "resource"] as const;
+
+const isTemplated = (value: unknown): value is string => typeof value === "string" && value.includes("{$");
+
+const variablesIn = (value: unknown): string[] =>
+  typeof value === "string" ? [...value.matchAll(VARIABLE_REF)].map((match) => match[1] as string) : [];
+
+/** §7.9 — an `authorized_uris` entry carrying a variable: URL form, or authority form whose host it fills. */
+export const VARIABLE_URL_FORM_ENTRY = new RegExp(`^(${VARIABLE_PLACEHOLDER})(?:\\/[^{}]*)?$`);
+export const VARIABLE_AUTHORITY_FORM_ENTRY = new RegExp(
+  `^([A-Za-z][A-Za-z0-9+.-]*:\\/\\/${VARIABLE_PLACEHOLDER}(?:\\.${LABEL})*(?::[0-9]+)?)(?:[/?#][^{}]*)?$`,
+);
+
+/**
+ * The origin a variable-bearing URL template or `authorized_uris` entry names, as a template:
+ * the leading placeholder in the URL form, the lowercased scheme and authority otherwise.
+ */
+function originTemplate(value: string): string | undefined {
+  const url = VARIABLE_URL_FORM_ENTRY.exec(value);
+  if (url) return url[1];
+  return VARIABLE_AUTHORITY_FORM_ENTRY.exec(value)?.[1]?.toLowerCase();
+}
+
+/** Whether `path` (relative to the manifest) is a place §7.12 lets `{$variable.<name>}` appear. */
+function variableAllowedAt(
+  path: (string | number)[],
+  sourceKind: unknown,
+  auths: Record<string, Record<string, unknown>>,
+): boolean {
+  const [root, key, field, ...rest] = path;
+  if (root === "source") return sourceKind === "remote" && path.join(".") === "source.remote.url";
+  if (root !== "auths") return false;
+  if (field === "issuer" && rest.length === 0) return auths[key as string]?.type === "oauth2";
+  if (field === "authorized_uris" && rest.length === 1) return true;
+  if (field !== "delivery") return false;
+  const [channel, a, b] = rest;
+  return (channel === "http" && a === "value" && b === undefined) ||
+    ((channel === "env" || channel === "files") && b === "value" && rest.length === 3);
+}
+
+/**
+ * §7.12 connection variables and the §7.3 / §7.7 / §7.9 rules that depend on them:
+ * at least one variable, each a required string named per VARIABLE_NAME_REGEX;
+ * well-formed `{$variable.<name>}` references, only where §7.12 allows them, naming
+ * declared variables; an oauth2 auth with a
+ * per-connection authorization server leaves the rest of its server to discovery;
+ * a variable-bearing `authorized_uris` entry of an oauth2 or connect auth shares the
+ * origin of the template choosing the upstream its credential is for; no variable in a key.
+ */
+function refineConnectionVariables(
+  val: { source?: unknown; variables?: unknown; auths?: unknown; setup_guide?: unknown },
+  auths: Record<string, Record<string, unknown>>,
+  ctx: z.RefinementCtx,
+): void {
+  const schema = (val.variables as { schema?: Record<string, unknown> } | undefined)?.schema;
+  const properties = (schema?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = Array.isArray(schema?.required) ? (schema.required as string[]) : [];
+
+  if (schema && Object.keys(properties).length === 0) {
+    ctx.addIssue({ code: "custom", path: ["variables", "schema", "properties"], message: "variables declares no variable" });
+  }
+  for (const [name, property] of Object.entries(properties)) {
+    const at = ["variables", "schema", "properties", name];
+    if (!VARIABLE_NAME_REGEX.test(name)) {
+      ctx.addIssue({ code: "custom", path: at, message: `variable "${name}" must match ${VARIABLE_NAME_REGEX.source}` });
+    }
+    if (property?.type !== "string") {
+      ctx.addIssue({ code: "custom", path: [...at, "type"], message: `variable "${name}" must have type "string"` });
+    }
+    if (!required.includes(name)) {
+      ctx.addIssue({ code: "custom", path: ["variables", "schema", "required"], message: `variable "${name}" must be listed in required` });
+    }
+  }
+  for (const name of required) {
+    if (!Object.prototype.hasOwnProperty.call(properties, name)) {
+      ctx.addIssue({ code: "custom", path: ["variables", "schema", "required"], message: `required names undeclared variable "${name}"` });
+    }
+  }
+
+  const source = val.source as { kind?: unknown; remote?: { url?: unknown } } | undefined;
+
+  // Every string under source, auths (credential schemas aside) and setup_guide.
+  const visit = (node: unknown, path: (string | number)[]): void => {
+    if (typeof node === "string") {
+      if (!node.includes("{$variable.")) return;
+      if (!variableAllowedAt(path, source?.kind, auths)) {
+        ctx.addIssue({ code: "custom", path, message: "{$variable.<name>} may appear only where §7.12 allows it" });
+        return;
+      }
+      const names = variablesIn(node);
+      if (names.length !== node.split("{$variable.").length - 1) {
+        ctx.addIssue({ code: "custom", path, message: `a {$variable.<name>} reference must name a variable matching ${VARIABLE_NAME_REGEX.source}` });
+      }
+      for (const name of names) {
+        if (!Object.prototype.hasOwnProperty.call(properties, name)) {
+          ctx.addIssue({ code: "custom", path, message: `{$variable.${name}} names no declared variable` });
+        }
+      }
+      return;
+    }
+    if (Array.isArray(node)) return node.forEach((item, i) => visit(item, [...path, i]));
+    if (typeof node !== "object" || node === null) return;
+    for (const [key, child] of Object.entries(node)) {
+      if (path[0] === "auths" && path.length === 3 && path[2] === "credentials" && key === "schema") continue;
+      if (key.includes("{$variable.")) {
+        ctx.addIssue({ code: "custom", path: [...path, key], message: "{$variable.<name>} may not appear in a key" });
+      }
+      visit(child, [...path, key]);
+    }
+  };
+  visit(val.source, ["source"]);
+  visit(val.auths, ["auths"]);
+  visit(val.setup_guide, ["setup_guide"]);
+
+  // `source.remote.url` and `issuer` templates are the `urlOrVariableTemplate` union's.
+  const remoteUrl = source?.kind === "remote" ? source.remote?.url : undefined;
+  const remoteTemplated = isTemplated(remoteUrl);
+
+  // A variable renders either as a URL or as host labels, never as both (§7.12).
+  const forms = new Map<string, Set<"url" | "host">>();
+  const noteForm = (name: string | undefined, form: "url" | "host"): void => {
+    if (name === undefined) return;
+    forms.set(name, (forms.get(name) ?? new Set()).add(form));
+  };
+  const noteTemplate = (value: unknown): void => {
+    if (isTemplated(value)) noteForm(variablesIn(value)[0], value.startsWith("{$") ? "url" : "host");
+  };
+  noteTemplate(remoteUrl);
+  for (const method of Object.values(auths)) if (method.type === "oauth2") noteTemplate(method.issuer);
+
+  for (const [key, method] of Object.entries(auths)) {
+    const at = ["auths", key];
+    const uris = Array.isArray(method.authorized_uris) ? (method.authorized_uris as unknown[]) : [];
+    const connect = method.connect as { tool?: unknown } | undefined;
+
+    // The template choosing the upstream this auth's credential is for, if any.
+    let upstreamTemplate: unknown;
+    if (connect) {
+      upstreamTemplate = connect.tool && remoteTemplated ? remoteUrl : undefined;
+    } else if (method.type === "oauth2") {
+      const issuerTemplated = isTemplated(method.issuer);
+      const declared = DISCOVERED_OAUTH_FIELDS.filter((field) => method[field] !== undefined);
+      if ((issuerTemplated || remoteTemplated) && declared.length > 0) {
+        ctx.addIssue({ code: "custom", path: at, message: `a per-connection authorization server leaves ${declared.join(", ")} to discovery` });
+      }
+      if (remoteTemplated && method.issuer !== undefined) {
+        const remoteVariables = new Set(variablesIn(remoteUrl));
+        if (!issuerTemplated || variablesIn(method.issuer).some((name) => !remoteVariables.has(name))) {
+          ctx.addIssue({ code: "custom", path: [...at, "issuer"], message: "with a templated source.remote.url, an issuer is a template over its variables" });
+        }
+      }
+      // Tokens are for the resource: a remote source's URL, else the issuer.
+      upstreamTemplate = source?.kind === "remote" ? remoteUrl : method.issuer;
+    }
+    const issued = connect !== undefined || method.type === "oauth2";
+    const upstreamOrigin = isTemplated(upstreamTemplate) ? originTemplate(upstreamTemplate) : undefined;
+
+    // §7.12 — no variable steers an issued credential: delivery values use the upstream's.
+    if (issued) {
+      const upstreamVariables = new Set(variablesIn(upstreamTemplate));
+      const delivery = (method.delivery ?? {}) as Record<string, Record<string, { value?: unknown }> | { value?: unknown }>;
+      const values: [unknown, (string | number)[]][] = [
+        [(delivery.http as { value?: unknown } | undefined)?.value, ["delivery", "http", "value"]],
+        ...(["env", "files"] as const).flatMap((channel) =>
+          Object.entries((delivery[channel] ?? {}) as Record<string, { value?: unknown }>).map(
+            ([name, entry]): [unknown, (string | number)[]] => [entry?.value, ["delivery", channel, name, "value"]],
+          ),
+        ),
+      ];
+      for (const [value, path] of values) {
+        if (variablesIn(value).some((name) => !upstreamVariables.has(name))) {
+          ctx.addIssue({ code: "custom", path: [...at, ...path], message: "on an issued credential, a value template references only variables of the template choosing its upstream" });
+        }
+      }
+    }
+
+    uris.forEach((uri, i) => {
+      if (typeof uri !== "string") return;
+      if (!uri.includes("{$variable.")) {
+        if (issued && upstreamOrigin !== undefined) {
+          ctx.addIssue({ code: "custom", path: [...at, "authorized_uris", i], message: "an auth whose upstream is a URL template bounds its credential to that template's origin only" });
+        }
+        return;
+      }
+      const origin = originTemplate(uri);
+      if (origin !== undefined) noteForm(variablesIn(uri)[0], origin.startsWith("{$") ? "url" : "host");
+      if (origin === undefined) {
+        ctx.addIssue({ code: "custom", path: [...at, "authorized_uris", i], message: "an entry carrying a variable takes the URL form or the authority form with the variable filling the host" });
+      } else if (issued && origin !== upstreamOrigin) {
+        ctx.addIssue({ code: "custom", path: [...at, "authorized_uris", i], message: "this entry does not share the origin of the template choosing the upstream this credential is for" });
+      }
+    });
+  }
+  for (const [name, used] of forms) {
+    if (used.size > 1) {
+      ctx.addIssue({ code: "custom", path: ["variables", "schema", "properties", name], message: `variable "${name}" is used both as a URL and as host labels; no value renders both` });
     }
   }
 }
@@ -751,6 +998,8 @@ export function createSchemas(majorVersion: number) {
       ...commonFields,
       type: z.literal("integration"),
       source: integrationSource,
+      // Non-secret, per-connection values shared by every auth method (§7.12).
+      variables: variablesConfig.optional(),
       auths: z.record(z.string().regex(AUTH_KEY_REGEX), authMethod),
       // `tools_policy` is a SPARSE POLICY TABLE keyed by tool name — it
       // carries `required_scopes` (keyed by auth key)
@@ -791,6 +1040,7 @@ export function createSchemas(majorVersion: number) {
       for (const [key, method] of Object.entries(auths)) {
         refineAuthMethod(key, method, ctx, sourceKind);
       }
+      refineConnectionVariables(val, auths, ctx);
       // `allow_undeclared_tools` requires at least one auth to be
       // "wildcard-usable" — i.e. either a non-oauth2 auth (no scope
       // mechanism, the wholesale grant covers any tool) or an oauth2

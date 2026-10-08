@@ -9,6 +9,7 @@
  */
 
 import { describe, test, expect } from "bun:test";
+import Ajv2020 from "ajv/dist/2020";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -16,6 +17,7 @@ import {
   skillManifestSchema,
   mcpServerManifestSchema,
   integrationManifestSchema,
+  integrationSource,
   packageTypeEnum,
 } from "../src/schemas.ts";
 
@@ -988,6 +990,322 @@ describe("integration auth methods (§7.2 – §7.5)", () => {
 // ─────────────────────────────────────────────
 // §7.6 — Credential delivery
 // ─────────────────────────────────────────────
+
+describe("connection variables (§7.12)", () => {
+  const variables = {
+    schema: {
+      type: "object",
+      properties: {
+        base_url: { type: "string", format: "uri", default: "https://forge.example.com" },
+        tenant: { type: "string" },
+      },
+      required: ["base_url", "tenant"],
+    },
+  };
+  const bearer = { http: { in: "header", name: "Authorization", prefix: "Bearer ", value: "{$credential.access_token}" } };
+  const tokenAuth = {
+    type: "api_key",
+    credentials: { schema: { type: "object", properties: { token: { type: "string" } }, required: ["token"] } },
+    delivery: { http: { in: "header", name: "Authorization", prefix: "Bearer ", value: "{$credential.token}" } },
+    authorized_uris: ["{$variable.base_url}/**"],
+  };
+  const selfHosted = {
+    name: "@test/forge",
+    version: "1.0.0",
+    type: "integration",
+    schema_version: "0.3",
+    display_name: "Forge",
+    source: { kind: "remote", remote: { url: "{$variable.base_url}/mcp", transport: "streamable-http" } },
+    variables,
+    auths: { oauth: { type: "oauth2", delivery: bearer, authorized_uris: ["{$variable.base_url}/**"] }, token: tokenAuth },
+  };
+  const withUrl = (url: string) => ({ ...selfHosted, source: { kind: "remote", remote: { url, transport: "streamable-http" } } });
+  const hostForm = {
+    ...withUrl("https://{$variable.tenant}.forge.example.com/mcp"),
+    auths: { oauth: { type: "oauth2", delivery: bearer, authorized_uris: ["https://{$variable.tenant}.forge.example.com/**"] }, token: tokenAuth },
+  };
+  const withOauth = (oauth: Record<string, unknown>) => ({
+    ...selfHosted,
+    source: { kind: "none" },
+    auths: { oauth: { type: "oauth2", delivery: bearer, ...oauth } },
+  });
+  const withConnect = (request: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    ...selfHosted,
+    source: { kind: "none" },
+    auths: {
+      session: {
+        type: "custom",
+        credentials: { schema: { type: "object", properties: { password: { type: "string" } }, required: ["password"] } },
+        connect: { login: { request: { method: "POST", ...request }, outputs: { token: "$response.body#/token" } } },
+        delivery: { http: { in: "header", name: "Authorization", prefix: "Bearer ", value: "{$credential.token}" } },
+        ...extra,
+      },
+    },
+  });
+
+  test("URL form and host form templates over declared variables are valid", () => {
+    expectValid(integrationManifestSchema, selfHosted);
+    expectValid(integrationManifestSchema, withUrl("{$variable.base_url}"));
+    expectValid(integrationManifestSchema, withUrl("{$variable.base_url}/api/v4/mcp/"));
+    expectValid(integrationManifestSchema, hostForm);
+  });
+
+  test("literal URLs stay valid without any variables", () => {
+    const literal = { ...withUrl("https://forge.example.com/mcp"), auths: { oauth: { type: "oauth2", delivery: bearer } } };
+    delete (literal as Record<string, unknown>).variables;
+    expectValid(integrationManifestSchema, literal);
+  });
+
+  test("a templated issuer leaves endpoints and resource to discovery (§7.3)", () => {
+    expectValid(integrationManifestSchema, withOauth({ issuer: "{$variable.base_url}", authorized_uris: ["{$variable.base_url}/api/**"] }));
+    for (const field of ["authorization_endpoint", "token_endpoint", "userinfo_endpoint"]) {
+      expectInvalid(integrationManifestSchema, withOauth({ issuer: "{$variable.base_url}", [field]: "https://forge.example.com/oauth/x" }));
+    }
+    expectInvalid(integrationManifestSchema, withOauth({ issuer: "{$variable.base_url}", resource: "https://forge.example.com/api" }));
+  });
+
+  test("only issuer is templated among oauth2 fields (§7.3)", () => {
+    expectInvalid(integrationManifestSchema, withOauth({ issuer: "{$variable.base_url}", token_endpoint: "{$variable.tenant}/token" }));
+    expectInvalid(integrationManifestSchema, withOauth({ token_endpoint: "{$variable.base_url}/oauth/token" }));
+    expectInvalid(integrationManifestSchema, withOauth({ resource: "{$variable.base_url}/api" }));
+  });
+
+  test("a templated remote url leaves oauth2 issuer, endpoints and resource to discovery (§7.3)", () => {
+    for (const field of ["issuer", "token_endpoint", "resource"]) {
+      expectInvalid(integrationManifestSchema, {
+        ...selfHosted,
+        auths: { oauth: { type: "oauth2", delivery: bearer, [field]: "https://forge.example.com/x" } },
+      });
+    }
+  });
+
+  test("an issued credential's authorized_uris reference only the variables choosing its upstream (§7.9)", () => {
+    expectInvalid(integrationManifestSchema, withOauth({ issuer: "https://accounts.example.com", authorized_uris: ["{$variable.base_url}/**"] }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/login" }, { authorized_uris: ["{$variable.base_url}/**"] }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login" }, { authorized_uris: ["{$variable.base_url}/**"] }));
+    // An author-bounded or separately chosen issuer never sends its token to another user-named host.
+    expectInvalid(integrationManifestSchema, withOauth({ issuer: "https://{$variable.tenant}.okta.com", authorized_uris: ["{$variable.base_url}/**"] }));
+    expectValid(integrationManifestSchema, withOauth({ issuer: "https://{$variable.tenant}.okta.com", authorized_uris: ["https://{$variable.tenant}.okta.com/**"] }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "https://{$variable.tenant}.forge.example.com/login" }, { authorized_uris: ["{$variable.base_url}/**"] }));
+    expectInvalid(integrationManifestSchema, { ...hostForm, auths: { oauth: { ...hostForm.auths.oauth, authorized_uris: ["{$variable.base_url}/**"] } } });
+    // A user-supplied credential is not issued by an upstream: any declared variable bounds it.
+    expectValid(integrationManifestSchema, { ...hostForm, auths: { ...hostForm.auths, token: { ...tokenAuth, authorized_uris: ["{$variable.base_url}/**"] } } });
+  });
+
+  test("an entry carrying a variable takes the URL form or fills the host (§7.9)", () => {
+    const withToken = (uri: string) => ({ ...selfHosted, auths: { token: { ...tokenAuth, authorized_uris: [uri] } } });
+    expectValid(integrationManifestSchema, withToken("https://{$variable.tenant}/**"));
+    expectValid(integrationManifestSchema, withToken("https://{$variable.tenant}.forge.example.com:8443/**"));
+    for (const uri of [
+      "https://forge.example.com:{$variable.tenant}/**",
+      "https://{$variable.tenant}@evil.example/**",
+      "https://x.example.com/{$variable.base_url}/**",
+      "{$variable.base_url}{$variable.tenant}/**",
+      "{$variable.base_url}/{$variable.tenant}/**",
+      "https://{$variable.tenant}.{$credential.token}.example.com/**",
+    ]) {
+      expectInvalid(integrationManifestSchema, withToken(uri));
+    }
+  });
+
+  test("an issued credential's entries share the origin of the template choosing its upstream (§7.9)", () => {
+    // A host-form value may hold dots: a bare-host entry would reach `evil.com`, not `evil.com.forge.example.com`.
+    expectInvalid(integrationManifestSchema, { ...hostForm, auths: { oauth: { ...hostForm.auths.oauth, authorized_uris: ["https://{$variable.tenant}/**"] } } });
+    expectInvalid(integrationManifestSchema, withOauth({ issuer: "https://{$variable.tenant}.auth.example.com", authorized_uris: ["https://{$variable.tenant}/**"] }));
+    expectInvalid(integrationManifestSchema, withOauth({ issuer: "https://{$variable.tenant}.auth.example.com", authorized_uris: ["https://{$variable.tenant}.api.example.com/**"] }));
+    expectValid(integrationManifestSchema, withOauth({ issuer: "https://{$variable.tenant}.Auth.example.com", authorized_uris: ["https://{$variable.tenant}.auth.example.com/v1/**"] }));
+    // A connect.tool credential is issued by the templated remote server.
+    const toolAuth = {
+      type: "custom",
+      credentials: { schema: { type: "object", properties: { password: { type: "string" } }, required: ["password"] } },
+      connect: { tool: {} },
+      delivery: bearer,
+    };
+    expectValid(integrationManifestSchema, { ...selfHosted, auths: { session: { ...toolAuth, authorized_uris: ["{$variable.base_url}/**"] } } });
+    expectInvalid(integrationManifestSchema, { ...selfHosted, auths: { session: { ...toolAuth, authorized_uris: ["https://{$variable.tenant}/**"] } } });
+  });
+
+  test("a remote resource's tokens go to its own origin, not the issuer's (§7.9)", () => {
+    const split = (entry: string) => ({
+      ...withUrl("https://{$variable.tenant}.mcp.example.com/mcp"),
+      auths: { oauth: { type: "oauth2", delivery: bearer, issuer: "https://{$variable.tenant}.auth.example.com", authorized_uris: [entry] } },
+    });
+    expectValid(integrationManifestSchema, split("https://{$variable.tenant}.mcp.example.com/**"));
+    expectInvalid(integrationManifestSchema, split("https://{$variable.tenant}.auth.example.com/**"));
+  });
+
+  test("connect.tool on a fixed remote url gets no variable in authorized_uris (§7.9)", () => {
+    const toolAuth = {
+      type: "custom",
+      credentials: { schema: { type: "object", properties: { password: { type: "string" } }, required: ["password"] } },
+      connect: { tool: {} },
+      delivery: bearer,
+      authorized_uris: ["{$variable.base_url}/**"],
+    };
+    expectInvalid(integrationManifestSchema, { ...withUrl("https://forge.example.com/mcp"), auths: { session: toolAuth } });
+  });
+
+  test("an auth whose upstream is templated reaches no other origin (§7.9)", () => {
+    const withUris = (uris: string[]) => ({ ...selfHosted, auths: { oauth: { ...selfHosted.auths.oauth, authorized_uris: uris } } });
+    expectInvalid(integrationManifestSchema, withUris(["{$variable.base_url}/**", "https://exfil.example.com/**"]));
+    expectInvalid(integrationManifestSchema, { ...hostForm, auths: { oauth: { ...hostForm.auths.oauth, authorized_uris: ["https://{$variable.tenant}.forge.example.com:443/**"] } } });
+    // A fixed remote server with the customer's own IdP: tokens are for the fixed resource.
+    const fixedRemote = (uris: string[]) => ({
+      ...withUrl("https://mcp.example.com/mcp"),
+      auths: { oauth: { type: "oauth2", delivery: bearer, issuer: "https://{$variable.tenant}.okta.com", authorized_uris: uris } },
+    });
+    expectValid(integrationManifestSchema, fixedRemote(["https://mcp.example.com/**"]));
+    expectInvalid(integrationManifestSchema, fixedRemote(["https://{$variable.tenant}.okta.com/**"]));
+  });
+
+  test("a variable renders either as a URL or as host labels (§7.12)", () => {
+    expectInvalid(integrationManifestSchema, { ...selfHosted, auths: { oauth: { ...selfHosted.auths.oauth, issuer: "https://{$variable.base_url}.example.com" } } });
+    expectInvalid(integrationManifestSchema, { ...selfHosted, auths: { token: { ...tokenAuth, authorized_uris: ["https://{$variable.base_url}/**"] } } });
+  });
+
+  test("connect delivery values follow the credential's upstream (§7.12)", () => {
+    const valueOf = (value: string) => ({ http: { in: "header", name: "Authorization", prefix: "Bearer ", value } });
+    expectInvalid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/login" }, { delivery: valueOf("{$variable.base_url}") }));
+    const toolAuth = (value: string) => ({
+      type: "custom",
+      credentials: { schema: { type: "object", properties: { password: { type: "string" } }, required: ["password"] } },
+      connect: { tool: {} },
+      delivery: valueOf(value),
+    });
+    expectValid(integrationManifestSchema, { ...selfHosted, auths: { session: toolAuth("{$credential.token} {$variable.base_url}") } });
+    expectInvalid(integrationManifestSchema, { ...selfHosted, auths: { session: toolAuth("{$credential.token} {$variable.tenant}") } });
+  });
+
+  test("a templated remote url admits an issuer templated over its variables (§7.3)", () => {
+    const withIssuer = (issuer: string) => ({ ...selfHosted, auths: { oauth: { ...selfHosted.auths.oauth, issuer } } });
+    expectValid(integrationManifestSchema, withIssuer("{$variable.base_url}"));
+    expectInvalid(integrationManifestSchema, withIssuer("https://{$variable.tenant}.auth.example.com"));
+    expectInvalid(integrationManifestSchema, withIssuer("https://gitlab.com"));
+  });
+
+  test("connect.login.request carries no variable (§7.7)", () => {
+    expectValid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/login", body: "password={{password}}" }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login" }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/login", body: "host={$variable.base_url}" }));
+  });
+
+  test("no variable steers an issued credential through a value template (§7.12)", () => {
+    const withEnv = (oauth: Record<string, unknown>) =>
+      withOauth({ ...oauth, delivery: { env: { GITLAB_TOKEN: { value: "{$credential.access_token}" }, GITLAB_URL: { value: "{$variable.base_url}" } } } });
+    expectInvalid(integrationManifestSchema, withEnv({ issuer: "https://gitlab.com" }));
+    expectInvalid(integrationManifestSchema, withEnv({ issuer: "https://{$variable.tenant}.gitlab.example.com" }));
+    expectValid(integrationManifestSchema, withEnv({ issuer: "{$variable.base_url}" }));
+  });
+
+  test("only credentials.schema is exempt from placement checks", () => {
+    expectInvalid(integrationManifestSchema, { ...selfHosted, auths: { token: { ...tokenAuth, credentials: { ...tokenAuth.credentials, hint: "{$variable.base_url}" } } } });
+  });
+
+  test("variables appear only where §7.12 allows them", () => {
+    expectInvalid(integrationManifestSchema, withOauth({ issuer: "{$variable.base_url}", authorization_params: { host: "{$variable.base_url}" } }));
+    expectInvalid(integrationManifestSchema, { ...selfHosted, setup_guide: { steps: [{ label: "Open", url: "{$variable.base_url}/settings" }] } });
+    expectInvalid(integrationManifestSchema, { ...selfHosted, auths: { token: { ...tokenAuth, issuer: "{$variable.base_url}" } } });
+    const withDelivery = (delivery: Record<string, unknown>) => ({ ...selfHosted, auths: { token: { ...tokenAuth, delivery } } });
+    expectInvalid(integrationManifestSchema, withDelivery({ files: { "/etc/{$variable.tenant}.pem": { value: "{$credential.token}" } } }));
+    expectInvalid(integrationManifestSchema, withDelivery({ env: { "{$variable.tenant}": { value: "{$credential.token}" } } }));
+    expectInvalid(integrationManifestSchema, {
+      ...selfHosted,
+      source: { kind: "none", remote: { url: "{$variable.base_url}/mcp", transport: "streamable-http" } },
+      auths: { token: tokenAuth },
+    });
+  });
+
+  test("every reference names a declared variable", () => {
+    const withToken = (token: Record<string, unknown>) => ({ ...selfHosted, auths: { token: { ...tokenAuth, ...token } } });
+    expectInvalid(integrationManifestSchema, withUrl("{$variable.host_url}/mcp"));
+    expectInvalid(integrationManifestSchema, withToken({ authorized_uris: ["{$variable.nope}/**"] }));
+    expectInvalid(integrationManifestSchema, withToken({ delivery: { http: { in: "header", name: "X-Tenant", value: "{$variable.nope}" } } }));
+    expectInvalid(integrationManifestSchema, withToken({ delivery: { http: { in: "header", name: "X-Tenant", value: "{$variable.Base_url}" } } }));
+    expectInvalid(integrationManifestSchema, withToken({ authorized_uris: ["{$variable.BASE}/**"] }));
+    expectValid(integrationManifestSchema, withToken({ delivery: { http: { in: "header", name: "X-Tenant", value: "{$variable.tenant}" } } }));
+    expectValid(integrationManifestSchema, withToken({ delivery: { env: { FORGE_URL: { value: "{$variable.base_url}" } } } }));
+    expectValid(integrationManifestSchema, withToken({ delivery: { files: { "/etc/forge/url": { value: "{$variable.base_url}" } } } }));
+    expectInvalid(integrationManifestSchema, withToken({ delivery: { env: { FORGE_URL: { value: "{$variable.nope}" } } } }));
+    const noVariables = { ...selfHosted };
+    delete (noVariables as Record<string, unknown>).variables;
+    expectInvalid(integrationManifestSchema, noVariables);
+  });
+
+  test("variables: at least one, each a required string named like auth keys", () => {
+    expectInvalid(integrationManifestSchema, { ...selfHosted, variables: { schema: { ...variables.schema, required: ["tenant"] } } });
+    expectInvalid(integrationManifestSchema, { ...selfHosted, variables: { schema: { ...variables.schema, required: ["base_url", "tenant", "region"] } } });
+    expectInvalid(integrationManifestSchema, {
+      ...selfHosted,
+      variables: { schema: { ...variables.schema, properties: { ...variables.schema.properties, base_url: { type: "number" } } } },
+    });
+    const literal = withUrl("https://forge.example.com/mcp");
+    const oauthOnly = { oauth: { type: "oauth2", delivery: bearer } };
+    expectInvalid(integrationManifestSchema, { ...literal, auths: oauthOnly, variables: { schema: { type: "object", properties: { BaseUrl: { type: "string" } }, required: ["BaseUrl"] } } });
+    expectInvalid(integrationManifestSchema, { ...literal, auths: oauthOnly, variables: { schema: { type: "object", properties: {} } } });
+  });
+
+  test("variables and credential fields are separate namespaces", () => {
+    expectValid(integrationManifestSchema, {
+      ...selfHosted,
+      auths: {
+        token: {
+          ...tokenAuth,
+          credentials: { schema: { type: "object", properties: { token: { type: "string" }, base_url: { type: "string" } } } },
+        },
+      },
+    });
+  });
+
+  test("a URL template is strict", () => {
+    for (const url of [
+      "{$variable.base_url}?x=1",
+      "{$variable.base_url}/mcp#f",
+      "{$variable.base_url}/**",
+      "{$variable.base_url}//evil.example/x",
+      "{$variable.base_url}/../admin",
+      "{$variable.base_url}/a/./b",
+      "{$variable.base_url}/%2e%2e/admin",
+      "{$variable.base_url}/{$variable.tenant}",
+      "{$variable.base_url}mcp",
+      "{$credential.token}/mcp",
+      "{$outputs.base_url}/mcp",
+      "http://{$variable.tenant}.forge.example.com/mcp",
+      "https://{$variable.tenant}/mcp",
+      "https://{$variable.tenant}.1.2.3/mcp",
+      "https://forge.example.com:{$variable.tenant}/mcp",
+      "https://x.{$variable.tenant}.example.com/mcp",
+      "https://x.example/{$variable.tenant}",
+    ]) {
+      expectInvalid(integrationManifestSchema, withUrl(url));
+    }
+    expect(integrationSource.safeParse({ kind: "remote", remote: { url: "https://{$credential.secret}.evil.example/", transport: "sse" } }).success).toBe(false);
+  });
+
+  test("the generated JSON Schema mirrors the structural rules", () => {
+    const ajv = new Ajv2020({ strict: false, validateFormats: false });
+    const validate = ajv.compile(JSON.parse(readFileSync(join(import.meta.dir, "../v0/integration.schema.json"), "utf8")));
+    expect(validate(selfHosted)).toBe(true);
+    expect(validate(hostForm)).toBe(true);
+    const example = JSON.parse(readFileSync(join(import.meta.dir, "../../../examples/integration-self-hosted/manifest.json"), "utf8"));
+    expect(validate(example)).toBe(true);
+    expectValid(integrationManifestSchema, example);
+    const withEntry = (uri: string) => ({ ...selfHosted, auths: { token: { ...tokenAuth, authorized_uris: [uri] } } });
+    expect(validate(withEntry("https://{$variable.tenant}.forge.example.com:8443?q=1"))).toBe(true);
+    for (const uri of ["https://x.example.com/{$variable.tenant}/**", "https://{$variable.tenant}@evil.example/**", "{$variable.tenant}{$variable.tenant}/**"]) {
+      expect(validate(withEntry(uri))).toBe(false);
+      expectInvalid(integrationManifestSchema, withEntry(uri));
+    }
+    expect(validate(withUrl("{$variable.base_url}//evil.example"))).toBe(false);
+    expect(validate({ ...selfHosted, variables: { schema: { type: "object", properties: { base_url: { type: "number" } } } } })).toBe(false);
+    expect(validate({ ...selfHosted, variables: { schema: { type: "object", properties: { BaseUrl: { type: "string" } } } } })).toBe(false);
+    expect(validate({ ...selfHosted, variables: { schema: { type: "object", properties: { base_url: true } } } })).toBe(false);
+    expect(validate({ ...selfHosted, variables: { schema: { type: "object", properties: {} } } })).toBe(false);
+    expect(validate(withOauth({ issuer: "{$variable.base_url}", token_endpoint: "https://evil.example/token" }))).toBe(false);
+    expect(validate(withOauth({ token_endpoint: "{$variable.base_url}/token" }))).toBe(false);
+    expect(validate({ ...selfHosted, auths: { oauth: { type: "oauth2", delivery: bearer, issuer: "https://forge.example.com" } } })).toBe(false);
+    expect(validate({ ...selfHosted, auths: { oauth: { type: "oauth2", delivery: bearer, issuer: "{$variable.base_url}" } } })).toBe(true);
+  });
+});
 
 describe("credential delivery (§7.6)", () => {
   const base = {
