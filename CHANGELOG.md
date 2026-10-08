@@ -34,6 +34,14 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
 
 - §11 normative reference [PSL], the Public Suffix List.
 
+- §4.4 `integrations_configuration.<id>.required` (boolean, default `false`):
+  when `true`, a consumer MUST NOT start a run unless at least one credential
+  for the integration is bound to it; when `false` or absent, a consumer SHOULD
+  start the run without the integration when none is available and MUST make
+  the absence observable to the agent and to whoever launched the run (#27).
+  §6.1 presents a declared integration with no bound credential to the agent as
+  unavailable; §3.2, Appendix A and Appendix C list the field.
+
 ### Changed
 
 - **Breaking:** §7.7 evaluation profile. For `success_criteria` and Selector
@@ -108,6 +116,10 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
   alone. Under `https://*.amazonaws.com/**`, `sts.amazonaws.com` still
   receives it, `s3.amazonaws.com` (itself a public suffix) does not.
 
+- Editorial: the §4.1 example declared an integration with the object form
+  `{ "version", "scopes" }` that §4.1 forbids; it now uses a semver-range string,
+  followed by a separate `integrations_configuration` example.
+
 ### Migration
 
 Producers: for `variables`, nothing to change; it is opt-in. Consumers: validate with
@@ -117,6 +129,22 @@ that declare `variables`.
 
 `connect.login`: see the two §7.7 entries under Changed. Producers rewrite a form
 outside the evaluation profile within it; consumers evaluate at least the profile.
+
+`required`: producers set `"required": true` on each integration an agent cannot
+run without; existing manifests stay valid. Consumers that refused a run with any
+unbound integration SHOULD now start it unless the integration is `required`, and
+MUST tell the agent and the launcher which integrations are unavailable. Validate
+with `@afps-spec/schema` 0.9.0.
+
+## Schema `@afps-spec/schema@0.9.0` — 2026-10-08
+
+Additive schema change: a manifest that validated under 0.8.0 still validates
+unless an `integrations_configuration` entry carried a non-boolean `required`
+(the entry is a loose object, so 0.8.0 accepted any value there).
+
+- `integrations_configuration.<id>.required: boolean`, optional (§4.4, #27).
+  The schema constrains the type only; consumers apply the default `false`.
+- `examples/agent-full` marks its Gmail integration `"required": true`.
 
 ## Schema `@afps-spec/schema@0.8.0` — 2026-10-08
 

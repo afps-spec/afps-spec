@@ -199,7 +199,7 @@ export const schemaWrapper = z.object({
  * A dependency entry: a semver range string (§4.1). Every value in the
  * `dependencies.{skills,mcp_servers,integrations}` maps is a bare semver
  * range — the maps declare *which* packages and at *what* versions, nothing
- * more. Per-integration agent configuration (`tools`/`scopes`/`auth_key`)
+ * more. Per-integration agent configuration (`tools`/`scopes`/`auth_key`/`required`)
  * lives in the top-level `integrations_configuration` block (§4.4).
  */
 export const dependenciesSchema = z
@@ -218,8 +218,8 @@ export const dependenciesSchema = z
  * Per-integration agent configuration, keyed by the integration dependency id
  * (§4.4). Each key MUST correspond to an entry in `dependencies.integrations`
  * (enforced on the agent manifest). Carries the tool selection driving the
- * runtime allowlist, the OAuth scope selection, and the `auth_key`
- * disambiguator for multi-auth integrations.
+ * runtime allowlist, the OAuth scope selection, the `auth_key`
+ * disambiguator for multi-auth integrations, and the `required` flag.
  */
 export const integrationConfigurationObject = z.looseObject({
   // `tools: "*"` is an opt-in wildcard: the agent forgoes per-tool selection
@@ -232,6 +232,12 @@ export const integrationConfigurationObject = z.looseObject({
   auth_key: z
     .string()
     .regex(AUTH_KEY_REGEX, { error: "auth_key must match ^[a-z][a-z0-9_]*$" })
+    .optional(),
+  required: z
+    .boolean()
+    .describe(
+      "Whether the agent needs this integration to run (default false). When true, a consumer MUST NOT start a run unless a credential for the integration is bound to it; otherwise the run starts without it and the agent sees it as unavailable.",
+    )
     .optional(),
 });
 

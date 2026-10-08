@@ -408,6 +408,19 @@ describe("agent manifest (§3.2)", () => {
       integrations_configuration: { "@acme/gmail": { tools: "all" } },
     });
   });
+
+  test("integrations_configuration.<id>.required is an optional boolean (§4.4)", () => {
+    const withConfig = (config: Record<string, unknown>) => ({
+      ...base,
+      dependencies: { integrations: { "@acme/gmail": "^1.0.0" } },
+      integrations_configuration: { "@acme/gmail": { tools: ["list_messages"], ...config } },
+    });
+    expectValid(agentManifestSchema, withConfig({ required: true }));
+    expectValid(agentManifestSchema, withConfig({ required: false }));
+    expectValid(agentManifestSchema, withConfig({}));
+    expectInvalid(agentManifestSchema, withConfig({ required: "yes" }));
+    expectInvalid(agentManifestSchema, withConfig({ required: 1 }));
+  });
 });
 
 // ─────────────────────────────────────────────

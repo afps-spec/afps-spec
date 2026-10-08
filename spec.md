@@ -454,7 +454,7 @@ All manifests are JSON objects. Unknown top-level fields and unknown nested fiel
 
 ### 3.2 Agent Manifest
 
-Agent manifests extend the common fields above. A conforming agent manifest MUST include `schema_version`, `display_name`, and `author` (§3.1). Per-integration runtime configuration (tool selection, requested OAuth scopes, auth-method selection) is declared in the top-level `integrations_configuration` map (§4.4).
+Agent manifests extend the common fields above. A conforming agent manifest MUST include `schema_version`, `display_name`, and `author` (§3.1). Per-integration runtime configuration (tool selection, requested OAuth scopes, auth-method selection, whether the integration is required) is declared in the top-level `integrations_configuration` map (§4.4).
 
 #### Required files
 
@@ -628,12 +628,7 @@ A package declares its dependencies using the `dependencies` field. The field co
 ```json
 {
   "dependencies": {
-    "integrations": {
-      "@acme/gmail": {
-        "version": "^1.0.0",
-        "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
-      }
-    },
+    "integrations": { "@acme/gmail": "^1.0.0" },
     "skills": { "@acme/rewrite-tone": "^1.0.0" },
     "mcp_servers": { "@acme/fetch-json": "^1.0.0" }
   }
@@ -644,7 +639,23 @@ Each map entry is an AFPS package identity (§2.2) paired with a **dependency va
 
 A dependency value MUST be a valid semver range string (e.g. `"^1.0.0"`, `"~2.1"`, `">=3.0.0"`, `"*"`). Each dependency map is a flat record of package identity to version range; it carries no per-dependency configuration.
 
-Per-integration agent configuration (tool selection, OAuth scopes, auth-method selection) is declared separately, in the top-level `integrations_configuration` map (§4.4).
+Per-integration agent configuration (tool selection, OAuth scopes, auth-method selection, whether the integration is required) is declared separately, in the top-level `integrations_configuration` map (§4.4):
+
+```json
+{
+  "dependencies": {
+    "integrations": { "@acme/gmail": "^1.0.0", "@acme/slack": "^2.0.0" }
+  },
+  "integrations_configuration": {
+    "@acme/gmail": {
+      "tools": ["list_messages"],
+      "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+      "required": true
+    },
+    "@acme/slack": { "tools": ["post_message"] }
+  }
+}
+```
 
 The following diagram illustrates how an agent composes its dependencies:
 
@@ -682,6 +693,7 @@ Each key MUST be a scoped name (§2.2) that corresponds to an entry in `dependen
 - `tools` (array of strings or the wildcard literal `"*"`) — the integration tool names the agent consumes. Consumers use this selection to build the runtime tool allowlist exposed to the agent and to infer the minimum OAuth scope set (the union of the scopes required by the selected tools, §7.4). An absent or empty array means the agent selected no tools from this integration. The wildcard form `tools: "*"` opts the agent into every tool the upstream MCP server advertises at runtime; consumers MUST reject it unless the referenced integration declares `allow_undeclared_tools: true` (§7.8), and they MUST then use the selected auth's `default_scopes` (§7.4) as the agent's scope set instead of the per-tool union.
 - `scopes` (array of strings) — explicit OAuth scopes the agent requests from this integration, in addition to any inferred from `tools`. Consumers compute the effective requested scope set as the union across the agent's configured integrations (§7.4).
 - `auth_key` (string) — selects an `auths.<key>` entry when the referenced integration declares more than one auth method. When omitted, consumers select the integration's sole auth method, or apply consumer-defined policy when multiple exist.
+- `required` (boolean, default `false`) — whether the agent needs this integration to run. When `true`, a consumer MUST NOT start a run unless at least one credential for the integration is bound to it. When `false` or absent, a consumer SHOULD start the run without the integration when none is available, and MUST make the absence observable to the agent (for example in its execution context, §6.1) and to whoever launched the run. This field is unrelated to any authentication metadata the integration itself declares (§7).
 
 Producers MAY add fields under `_meta` within a configuration object (§10).
 
@@ -823,7 +835,9 @@ A consumer MAY construct an execution context from:
 - `prompt.md`;
 - validated `input` data;
 - resolved skills, MCP servers, and integrations; and
-- per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools` (a string array, or the wildcard literal `"*"` when permitted by the integration's `allow_undeclared_tools` — §7.8), `scopes`, and `auth_key`.
+- per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools` (a string array, or the wildcard literal `"*"` when permitted by the integration's `allow_undeclared_tools` — §7.8), `scopes`, `auth_key`, and `required`.
+
+A declared integration to which no credential is bound for the run is presented to the agent as unavailable (§4.4).
 
 AFPS does not define prompt templating, state persistence, scheduling, or transport semantics. Those concerns are out of scope.
 
@@ -1420,6 +1434,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `integrations_configuration.<id>.tools` | agent | string[] \| "*" | MAY | integration tool names the agent consumes; `"*"` opts into all upstream tools when the integration declares `allow_undeclared_tools: true` (§4.4, §7.4, §7.8) | none |
 | `integrations_configuration.<id>.scopes` | agent | string[] | MAY | requested OAuth scopes for the integration (§7.4) | none |
 | `integrations_configuration.<id>.auth_key` | agent | string | MAY | selects an `auths.<key>` entry on the integration | none |
+| `integrations_configuration.<id>.required` | agent | boolean | MAY | whether the agent needs the integration to run; when `true`, no run starts without a bound credential (§4.4) | `false` |
 | `input` | agent | object | MAY | per-run data; requires `schema` child | none |
 | `input.schema` | agent | object | MUST if `input` present | AFPS schema object | none |
 | `output` | agent | object | MAY | per-run result; requires `schema` child | none |
@@ -1534,6 +1549,7 @@ Common consumer-side defaults observed in interoperable implementations include:
 | `auths.<key>.allow_all_uris` | `false` | resolved integration auth method |
 | `auths.<key>.delivery.files.<path>.mode` | `0400` | octal string |
 | `auths.<key>.connect.login.success_criteria` | HTTP 2xx | when omitted |
+| `integrations_configuration.<id>.required` | `false` | the integration is not needed to start a run (§4.4) |
 | `manifest_version` | `0.3` | mcp-server MCPB baseline |
 | `schema_version` | `0.3` | common consumer default for new agents/integrations |
 | `timeout` | `300` | common consumer default for new agents |
