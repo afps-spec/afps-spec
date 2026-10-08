@@ -54,8 +54,8 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
   later than install or save, and MUST NOT send a login request for it.
 - **Breaking:** §7.7 an AFPS extractor object carries no Selector Object field
   (`context`, `selector`, `type`); a `regex` extractor's `pattern` is an
-  ECMA-262 regular expression and its `group` (default 1) a capture group the
-  pattern declares.
+  ECMA-262 regular expression and its `group` (default 1) 0 (the whole match)
+  or a capture group the pattern declares.
 - **Breaking:** §7.3 client credentials an authorization server issues are bound
   to it (the `issuer` of its validated metadata) and presented only to its
   endpoints — never to a manifest-declared endpoint that differs from them — and
@@ -110,7 +110,7 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
 
 ### Migration
 
-Producers: nothing to change; `variables` is opt-in. Consumers: validate with
+Producers: for `variables`, nothing to change; it is opt-in. Consumers: validate with
 `@afps-spec/schema` 0.8.0 — under 0.7.0, `https://{$variable.tenant}.example.com/mcp`
 parses as a literal URL; until variables are implemented, refuse integrations
 that declare `variables`.
