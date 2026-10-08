@@ -297,7 +297,7 @@ All package types use a single `dependencies` field, grouped into three maps (`s
 }
 ```
 
-The `dependencies` object is grouped by package type (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to a semver range. Per-integration agent configuration is declared separately in `integrations_configuration`; `required: true` marks an integration the agent cannot run without — when it is absent or `false`, a run can start without the integration, which the agent then sees as unavailable.
+The `dependencies` object is grouped by package type (`skills`, `mcp_servers`, `integrations`). Each entry maps a scoped package name to a semver range. Per-integration agent configuration is declared separately in `integrations_configuration`; `required: true` marks an integration without whose credential no execution of the agent starts; when it is absent or `false`, an execution may start without one, and the agent then sees the integration as unavailable.
 
 See [spec.md, Section 4.1](./spec.md#41-dependency-declaration).
 

@@ -693,7 +693,7 @@ Each key MUST be a scoped name (§2.2) that corresponds to an entry in `dependen
 - `tools` (array of strings or the wildcard literal `"*"`) — the integration tool names the agent consumes. Consumers use this selection to build the runtime tool allowlist exposed to the agent and to infer the minimum OAuth scope set (the union of the scopes required by the selected tools, §7.4). An absent or empty array means the agent selected no tools from this integration. The wildcard form `tools: "*"` opts the agent into every tool the upstream MCP server advertises at runtime; consumers MUST reject it unless the referenced integration declares `allow_undeclared_tools: true` (§7.8), and they MUST then use the selected auth's `default_scopes` (§7.4) as the agent's scope set instead of the per-tool union.
 - `scopes` (array of strings) — explicit OAuth scopes the agent requests from this integration, in addition to any inferred from `tools`. Consumers compute the effective requested scope set as the union across the agent's configured integrations (§7.4).
 - `auth_key` (string) — selects an `auths.<key>` entry when the referenced integration declares more than one auth method. When omitted, consumers select the integration's sole auth method, or apply consumer-defined policy when multiple exist.
-- `required` (boolean, default `false`) — whether the agent needs this integration to run. When `true`, a consumer MUST NOT start a run unless at least one credential for the integration is bound to it. When `false` or absent, a consumer SHOULD start the run without the integration when none is available, and MUST make the absence observable to the agent (for example in its execution context, §6.1) and to whoever launched the run. This field is unrelated to any authentication metadata the integration itself declares (§7).
+- `required` (boolean, default `false`) — when `true`, a consumer MUST NOT start an execution of the agent (§6.1) unless a credential for this integration — for the auth method `auth_key` selects, when set — is provided to that execution, whether or not `tools` selects any tool. When `false` or absent, a consumer MAY start the execution without one; when it does, it MUST present the integration to the agent as unavailable (§6.1) and SHOULD report it to whoever started the execution.
 
 Producers MAY add fields under `_meta` within a configuration object (§10).
 
@@ -837,7 +837,7 @@ A consumer MAY construct an execution context from:
 - resolved skills, MCP servers, and integrations; and
 - per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools` (a string array, or the wildcard literal `"*"` when permitted by the integration's `allow_undeclared_tools` — §7.8), `scopes`, `auth_key`, and `required`.
 
-A declared integration to which no credential is bound for the run is presented to the agent as unavailable (§4.4).
+Whether an execution may start without a credential for a declared integration, and how the agent is then told, is governed by `required` (§4.4).
 
 AFPS does not define prompt templating, state persistence, scheduling, or transport semantics. Those concerns are out of scope.
 
@@ -1434,7 +1434,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `integrations_configuration.<id>.tools` | agent | string[] \| "*" | MAY | integration tool names the agent consumes; `"*"` opts into all upstream tools when the integration declares `allow_undeclared_tools: true` (§4.4, §7.4, §7.8) | none |
 | `integrations_configuration.<id>.scopes` | agent | string[] | MAY | requested OAuth scopes for the integration (§7.4) | none |
 | `integrations_configuration.<id>.auth_key` | agent | string | MAY | selects an `auths.<key>` entry on the integration | none |
-| `integrations_configuration.<id>.required` | agent | boolean | MAY | whether the agent needs the integration to run; when `true`, no run starts without a bound credential (§4.4) | `false` |
+| `integrations_configuration.<id>.required` | agent | boolean | MAY | when `true`, no execution of the agent starts without a credential for the integration (§4.4) | `false` |
 | `input` | agent | object | MAY | per-run data; requires `schema` child | none |
 | `input.schema` | agent | object | MUST if `input` present | AFPS schema object | none |
 | `output` | agent | object | MAY | per-run result; requires `schema` child | none |
@@ -1549,7 +1549,6 @@ Common consumer-side defaults observed in interoperable implementations include:
 | `auths.<key>.allow_all_uris` | `false` | resolved integration auth method |
 | `auths.<key>.delivery.files.<path>.mode` | `0400` | octal string |
 | `auths.<key>.connect.login.success_criteria` | HTTP 2xx | when omitted |
-| `integrations_configuration.<id>.required` | `false` | the integration is not needed to start a run (§4.4) |
 | `manifest_version` | `0.3` | mcp-server MCPB baseline |
 | `schema_version` | `0.3` | common consumer default for new agents/integrations |
 | `timeout` | `300` | common consumer default for new agents |

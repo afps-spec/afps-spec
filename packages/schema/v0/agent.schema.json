@@ -269,7 +269,7 @@
           },
           "required": {
             "type": "boolean",
-            "description": "Whether the agent needs this integration to run (default false). When true, a consumer MUST NOT start a run unless a credential for the integration is bound to it; otherwise the run starts without it and the agent sees it as unavailable."
+            "description": "Whether an execution of the agent needs a credential for this integration to start (default false). See AFPS §4.4."
           }
         },
         "additionalProperties": {}
