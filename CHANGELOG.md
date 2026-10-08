@@ -33,21 +33,23 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
   URL's origin.
 
 - §11 normative reference [PSL], the Public Suffix List.
-- §7.7 evaluation profile, the floor every consumer evaluates: a `simple`
-  Criterion `<expr> == <operand>` (exactly one `==`; no other `=`, `!`, `<`,
-  `>`, `&&`, `||`, `(`, `)` outside a quoted literal; each side a runtime
-  expression or a literal — a number, `true`, `false`, `null`, a single-quoted
-  string with `''` for a quote, optionally a double-quoted string — at least one
-  side an expression), `regex` and `jsonpath` Criteria, `jsonpath` and
-  `jsonpointer` Selector Objects. Whether string equality ignores case is left
-  open. Anything else, `xpath` included, a consumer MAY omit; a consumer that
-  does not support a form a manifest declares MUST reject the manifest at
-  install or save, not fail when a connection is attempted. A manifest meant
-  for every consumer writes one `simple` Criterion per comparison, omits
-  `success_criteria` to require HTTP 2xx, and declares no `xpath`.
 
 ### Changed
 
+- **Breaking:** §7.7 evaluation profile. For `success_criteria` and Selector
+  Objects, every consumer MUST evaluate a `simple` Criterion
+  `<expr> == <operand>` (exactly one `==`; no other `=`, `!`, `<`, `>`, `&&`,
+  `||`, `(`, `)` outside a quoted literal; each side one of `$statusCode`,
+  `$response.body`, `$response.body#/<json-pointer>`,
+  `$response.header.<name>` or a literal — a JSON number, `true`, `false`,
+  `null`, a single-quoted string with `''` for a quote, optionally a
+  double-quoted string — at least one side an expression; strings compare
+  case-insensitively), a `jsonpath` Criterion on `$response.body`, a `regex`
+  Criterion (ECMA-262) on `$response.body` or one header, and `jsonpath` and
+  `jsonpointer` Selector Objects on `$response.body`. Any other form, `xpath`
+  included, is now optional (consumers were required to resolve `xpath`); a
+  consumer that does not support a form a manifest declares MUST report it no
+  later than install or save, and MUST NOT send a login request for it.
 - **Breaking:** §7.3 client credentials an authorization server issues are bound
   to it (the `issuer` of its validated metadata) and presented only to its
   endpoints — never to a manifest-declared endpoint that differs from them — and
@@ -111,6 +113,8 @@ A `connect.login` with a compound or grouped `simple` condition, an unquoted
 string literal, or `xpath` may be rejected by a consumer that evaluates only the
 §7.7 profile: rewrite it within the profile (one Criterion per comparison,
 `success_criteria` omitted for HTTP 2xx, `regex` or `jsonpath` otherwise).
+Consumers evaluate at least the profile, compare its strings case-insensitively,
+and report any other form they do not support at install or save.
 
 ## Schema `@afps-spec/schema@0.8.0` — 2026-10-08
 
