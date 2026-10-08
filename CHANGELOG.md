@@ -34,9 +34,11 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
 
 - §11 normative reference [PSL], the Public Suffix List.
 - §7.7 evaluation profile: a consumer MAY evaluate a `simple` Criterion only as
-  `<expr> == <operand>` and MAY omit `xpath` (Criterion and Selector Object). A
-  consumer that does not support a form a manifest declares MUST reject the
-  manifest at install or save, not fail when a connection is attempted.
+  `<expr> == <operand>` (exactly one `==`; no other `=`, `!`, `<`, `>`, `&&`,
+  `||`, `(`, `)` outside a quoted literal; each side a runtime expression or a
+  literal) and MAY omit `xpath` (Criterion and Selector Object). A consumer that
+  does not support a form a manifest declares MUST reject the manifest at
+  install or save, not fail when a connection is attempted.
 
 ### Changed
 
@@ -95,8 +97,8 @@ Normative changes to the 0.3 draft (no spec-version bump, as for the
 ### Migration
 
 Producers: nothing to change; `variables` is opt-in. A manifest meant for every
-§7.7 evaluation profile writes one `simple` Criterion per `==` comparison and no
-`xpath`. Consumers: validate with
+consumer writes one `simple` Criterion per `==` comparison, omits
+`success_criteria` to require HTTP 2xx, and declares no `xpath`. Consumers: validate with
 `@afps-spec/schema` 0.8.0 — under 0.7.0, `https://{$variable.tenant}.example.com/mcp`
 parses as a literal URL; until variables are implemented, refuse integrations
 that declare `variables`.
