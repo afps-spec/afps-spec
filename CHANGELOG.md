@@ -22,6 +22,10 @@ Normative change to the 0.3 draft (no spec-version bump).
 - §7.7 `content_type` declares the body's media type, sent as `Content-Type`
   unless `headers` sets one.
 
+- Editorial: §7.9 states that a `connect.login`'s upstream, its request URL, is always
+  fixed: §7.7 refuses a `{$variable.<name>}` there, which §7.9's "when that upstream is a URL
+  template" left open.
+
 ### Migration
 
 Producers: write in `url` every `/`, `?` and `#` the template needs
