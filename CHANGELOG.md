@@ -1,5 +1,34 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-09
+
+Normative change to the 0.3 draft (no spec-version bump).
+
+### Changed
+
+- **Breaking:** §7.7 a `connect.login` `{{<name>}}` placeholder is encoded for
+  its position instead of substituted "as it is", so a value cannot add a URL
+  component, a form parameter, a JSON member, an XML element, a multipart part
+  or a header line. In `url`, a leading placeholder (a base URL) is verbatim
+  and every other one percent-encoded as one component (`encodeURIComponent`).
+  A header value is verbatim, and the login fails when it is not a field value
+  (RFC 9110) or, in `Cookie`, holds a character outside `cookie-octet`
+  (RFC 6265). A body is encoded by the media type of its `Content-Type`
+  header, else `content_type`: form-urlencoded per the WHATWG serializer; JSON
+  escaped in a string literal and, elsewhere, one JSON value of the field's
+  `credentials.schema` type; XML entity-escaped, `]]>` split in CDATA;
+  multipart failing on CR or LF; any other type verbatim. A login failed for a
+  value it cannot encode sends no request.
+- §7.7 `content_type` declares the body's media type, sent as `Content-Type`
+  unless `headers` sets one.
+
+### Migration
+
+Producers: write in `url` every `/`, `?` and `#` the template needs
+(`https://example.com/{{tenant}}`, not `https://example.com{{path}}`), and
+declare a field a bare JSON placeholder sends as a number or a boolean with
+that `credentials.schema` type. Consumers: encode as above.
+
 ## Spec 0.3 revision — 2026-10-08
 
 Normative changes to the 0.3 draft (no spec-version bump, as for the
