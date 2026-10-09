@@ -1103,7 +1103,7 @@ describe("connection variables (§7.12)", () => {
   test("an issued credential's authorized_uris reference only the variables choosing its upstream (§7.9)", () => {
     expectInvalid(integrationManifestSchema, withOauth({ issuer: "https://accounts.example.com", authorized_uris: ["{$variable.base_url}/**"] }));
     expectInvalid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/login" }, { authorized_uris: ["{$variable.base_url}/**"] }));
-    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login" }, { authorized_uris: ["{$variable.base_url}/**"] }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login" }, { authorized_uris: ["https://{$variable.tenant}.forge.example.com/**"] }));
     // An author-bounded or separately chosen issuer never sends its token to another user-named host.
     expectInvalid(integrationManifestSchema, withOauth({ issuer: "https://{$variable.tenant}.okta.com", authorized_uris: ["{$variable.base_url}/**"] }));
     expectValid(integrationManifestSchema, withOauth({ issuer: "https://{$variable.tenant}.okta.com", authorized_uris: ["https://{$variable.tenant}.okta.com/**"] }));
@@ -1204,10 +1204,28 @@ describe("connection variables (§7.12)", () => {
     expectInvalid(integrationManifestSchema, withIssuer("https://gitlab.com"));
   });
 
-  test("connect.login.request carries no variable (§7.7)", () => {
+  test("connect.login.request carries a variable only as a URL template in url (§7.7, §7.12)", () => {
     expectValid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/login", body: "password={{password}}" }));
-    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login" }));
     expectInvalid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/login", body: "host={$variable.base_url}" }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/login", headers: { Host: "{$variable.tenant}" } }));
+    // Not a URL template: a query, a login input, a variable after the host.
+    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login?next=/home" }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login/{{password}}" }));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "https://forge.example.com/{$variable.tenant}/login" }));
+  });
+
+  test("a templated connect.login url chooses the upstream its credential is for (§7.9, §7.12)", () => {
+    const bounded = { authorized_uris: ["{$variable.base_url}/**"] };
+    expectValid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login", body: "password={{password}}" }, bounded));
+    expectValid(integrationManifestSchema, withConnect({ url: "https://{$variable.tenant}.forge.example.com/login" }, { authorized_uris: ["https://{$variable.tenant}.forge.example.com/**"] }));
+    // Its delivery may name the template's variable, and only that one.
+    const cookie = (value: string) => ({ ...bounded, delivery: { http: { in: "header", name: "X-Base", value } } });
+    expectValid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login" }, cookie("{$variable.base_url}")));
+    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login" }, cookie("{$variable.tenant}")));
+    // A fixed entry would let the session reach a host the template did not choose.
+    expectInvalid(integrationManifestSchema, withConnect({ url: "{$variable.base_url}/login" }, { authorized_uris: ["https://forge.example.com/**"] }));
+    // A variable renders as a URL or as host labels, never both.
+    expectInvalid(integrationManifestSchema, withConnect({ url: "https://{$variable.base_url}.forge.example.com/login" }, bounded));
   });
 
   test("no variable steers an issued credential through a value template (§7.12)", () => {

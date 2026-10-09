@@ -1062,7 +1062,7 @@ Value templates reference the connection's credential fields as `{$credential.<f
 }
 ```
 
-- **`request`** — the inline HTTP request issued to obtain the credential. `content_type` selects the body encoding. `url`, header values, and `body` MAY carry `{{<name>}}` placeholders, each replaced by the user-supplied `credentials.schema` field `<name>` before the request is sent; an unresolved placeholder MUST fail the login. These placeholders substitute user-supplied credentials into the request as they are. No other `{$…}` expression is evaluated in the request.
+- **`request`** — the inline HTTP request issued to obtain the credential. `content_type` selects the body encoding. `url`, header values, and `body` MAY carry `{{<name>}}` placeholders, each replaced by the user-supplied `credentials.schema` field `<name>` before the request is sent; an unresolved placeholder MUST fail the login. These placeholders substitute user-supplied credentials into the request as they are. `url` MAY instead be a URL template (§7.12), which carries no `{{<name>}}` placeholder: the login request then goes to the URL it renders for the connection, and that URL is the upstream its credential is for (§7.9). No other `{$…}` expression is evaluated in the request.
 - **`success_criteria`** — an array of Arazzo Criterion objects (`condition`, optional `context`, optional `type` of `simple`/`regex`/`jsonpath`/`xpath`). When omitted, success is HTTP 2xx.
 - **`outputs`** — a map of named outputs. Each value is one of:
   - an **Arazzo runtime-expression string** (Arazzo §5.9): `$statusCode`, `$response.body`, `$response.body#/{json-pointer}` ([RFC 6901]), `$response.header.{name}`;
@@ -1211,7 +1211,7 @@ Under `source`, `auths` (outside `credentials.schema`), and `setup_guide`, `{$va
 
 #### URL-valued fields
 
-`source.remote.url` (§7.1) and an `oauth2` auth method's `issuer` (§7.3) MAY be a **URL template** of one of two forms, matching `URL_TEMPLATE_REGEX` (Appendix B):
+`source.remote.url` (§7.1), an `oauth2` auth method's `issuer` (§7.3) and a `connect.login` request `url` (§7.7) MAY be a **URL template** of one of two forms, matching `URL_TEMPLATE_REGEX` (Appendix B):
 
 - **URL form** — a `{$variable.<name>}` placeholder, followed by nothing or by a path, e.g. `{$variable.base_url}/api/v4/mcp`.
 - **Host form** — `https://`, a `{$variable.<name>}` placeholder, one or more literal domain labels (the last one starting with a letter), then nothing or a path, e.g. `https://{$variable.tenant}.forge.example.com/mcp`.

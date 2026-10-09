@@ -1,5 +1,27 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-09 (login URL template)
+
+Normative change to the 0.3 draft (no spec-version bump).
+
+### Added
+
+- §7.7, §7.12 a `connect.login` request `url` MAY be a URL template
+  (`{$variable.base_url}/login`, `https://{$variable.tenant}.example.com/login`),
+  carrying no `{{<name>}}` placeholder. It is the upstream the login's
+  credential is for (§7.9): its `authorized_uris` entries carry its variable
+  and share its origin, and its value templates reference only that variable.
+  A login against a host the connecting user names no longer needs a
+  credential field and an author-fixed allowlist.
+
+## Schema `@afps-spec/schema@0.10.0` — 2026-10-09
+
+A manifest that validated under 0.9.0 still validates.
+
+- `{$variable.<name>}` is accepted in `auths.<key>.connect.login.request.url`
+  when the value matches `URL_TEMPLATE_REGEX`; the template then chooses the
+  auth's upstream for the §7.9 origin rule and the §7.12 value-template rule.
+
 ## Spec 0.3 revision — 2026-10-08
 
 Normative changes to the 0.3 draft (no spec-version bump, as for the

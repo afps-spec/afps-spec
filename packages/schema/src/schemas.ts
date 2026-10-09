@@ -697,6 +697,7 @@ function variableAllowedAt(
   if (root !== "auths") return false;
   if (field === "issuer" && rest.length === 0) return auths[key as string]?.type === "oauth2";
   if (field === "authorized_uris" && rest.length === 1) return true;
+  if (field === "connect") return rest.join(".") === "login.request.url";
   if (field !== "delivery") return false;
   const [channel, a, b] = rest;
   return (channel === "http" && a === "value" && b === undefined) ||
@@ -796,12 +797,21 @@ function refineConnectionVariables(
   for (const [key, method] of Object.entries(auths)) {
     const at = ["auths", key];
     const uris = Array.isArray(method.authorized_uris) ? (method.authorized_uris as unknown[]) : [];
-    const connect = method.connect as { tool?: unknown } | undefined;
+    const connect = method.connect as
+      | { tool?: unknown; login?: { request?: { url?: unknown } } }
+      | undefined;
+    const loginUrl = connect?.login?.request?.url;
+    if (isTemplated(loginUrl)) {
+      noteTemplate(loginUrl);
+      if (!URL_TEMPLATE_REGEX.test(loginUrl)) {
+        ctx.addIssue({ code: "custom", path: [...at, "connect", "login", "request", "url"], message: URL_TEMPLATE_ERROR });
+      }
+    }
 
     // The template choosing the upstream this auth's credential is for, if any.
     let upstreamTemplate: unknown;
     if (connect) {
-      upstreamTemplate = connect.tool && remoteTemplated ? remoteUrl : undefined;
+      upstreamTemplate = connect.tool && remoteTemplated ? remoteUrl : isTemplated(loginUrl) ? loginUrl : undefined;
     } else if (method.type === "oauth2") {
       const issuerTemplated = isTemplated(method.issuer);
       const declared = DISCOVERED_OAUTH_FIELDS.filter((field) => method[field] !== undefined);
