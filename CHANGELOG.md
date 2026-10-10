@@ -1,5 +1,30 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-10
+
+Normative change to the 0.3 draft (no spec-version bump).
+
+### Changed
+
+- §7.6 a `{$credential.<field>}` reference renders a non-string credential
+  value as its JSON text (`5432`, `true`, `["a","b"]`) and treats `null` as
+  an absent field. The case was unspecified: a consumer could drop the field
+  and inject an empty value. The rule covers value templates and templated
+  `authorized_uris` alike.
+- §7.9 a `{$credential.<field>}` value in `authorized_uris` is judged on its
+  rendered text, identically when a connection is checked on creation and
+  when its entries are rendered, so a typed `port: 8443` is valid in the
+  authority form.
+- §7.7 a `null` field value is an absent field: its `connect.login`
+  placeholder is unresolved and the login fails, instead of sending the text
+  `null`.
+
+### Migration
+
+Producers: nothing to change; a template referencing a typed field now
+receives its value. Consumers: render as above, and apply the same projection
+to a connection's values when checking them on creation as when rendering.
+
 ## Spec 0.3 revision — 2026-10-09
 
 Normative change to the 0.3 draft (no spec-version bump).
