@@ -54,6 +54,7 @@
           "properties": {
             "token": {
               "type": "string",
+              "writeOnly": true,
               "title": "Personal access token",
               "description": "A token created on the instance, under the user's profile settings."
             }

@@ -1612,6 +1612,27 @@ describe("integration tools/uris/setup_guide (§7.8 – §7.10)", () => {
     });
   });
 
+  test("a declared scope is one RFC 6749 scope-token (§7.4)", () => {
+    const withScopes = (scopes: { defaults?: string[]; catalog?: string; required?: string[] }) => ({
+      ...validIntegrationOauth2,
+      auths: {
+        oauth: {
+          ...validIntegrationOauth2.auths.oauth,
+          default_scopes: scopes.defaults ?? ["read"],
+          scope_catalog: [{ value: scopes.catalog ?? "read", label: "Read" }],
+        },
+      },
+      tools_policy: { list_issues: { required_scopes: { oauth: scopes.required ?? ["read"] } } },
+    });
+    const valid = ["read", "https://www.googleapis.com/auth/gmail.readonly", "repo:status", "a,b", "!#[]~"];
+    expectValid(integrationManifestSchema, withScopes({ defaults: valid, required: valid }));
+    for (const scope of ["", "read write", 'a"b', "a\\b", "a\tb", "caf\u00e9"]) {
+      expectInvalid(integrationManifestSchema, withScopes({ defaults: [scope] }));
+      expectInvalid(integrationManifestSchema, withScopes({ catalog: scope }));
+      expectInvalid(integrationManifestSchema, withScopes({ required: [scope] }));
+    }
+  });
+
   test("setup_guide step requires a label", () => {
     expectInvalid(integrationManifestSchema, {
       ...validIntegrationOauth2,

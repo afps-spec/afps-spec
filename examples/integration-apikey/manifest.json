@@ -21,6 +21,7 @@
           "properties": {
             "api_key": {
               "type": "string",
+              "writeOnly": true,
               "description": "OpenAI API key"
             }
           },

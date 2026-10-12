@@ -468,7 +468,8 @@
           "default_scopes": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
             }
           },
           "scope_catalog": {
@@ -478,7 +479,7 @@
               "properties": {
                 "value": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
                 },
                 "label": {
                   "type": "string",
@@ -1065,7 +1066,8 @@
             "additionalProperties": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
               }
             }
           }

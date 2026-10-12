@@ -41,6 +41,7 @@ export {
   variablesConfig,
   VARIABLE_NAME_REGEX,
   URL_TEMPLATE_REGEX,
+  SCOPE_TOKEN_REGEX,
   deliverySchema,
   deliveryEncodingEnum,
   connectSchema,

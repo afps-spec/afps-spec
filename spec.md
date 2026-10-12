@@ -964,6 +964,10 @@ OAuth scopes are declared in two AFPS fields, distinct from the non-authoritativ
   - `implies` (array of strings) — OPTIONAL scopes implied by granting this one.
 - **Note**: `scope_catalog` is the AFPS source of truth for scope selection. [RFC 8414] `scopes_supported` is RECOMMENDED-only and frequently incomplete; a consumer MAY seed catalog values from discovery but MUST treat the manifest `scope_catalog` as authoritative. The `label`/`description`/`implies` data is not provided by any OAuth metadata standard.
 
+#### Scope tokens
+
+Every scope an integration manifest declares — a `default_scopes` entry, a `scope_catalog` `value`, a `tools_policy.<name>.required_scopes` entry (§7.8) — MUST be one `scope-token` of [RFC 6749] §3.3 (`SCOPE_TOKEN_REGEX`, Appendix B): one or more printable ASCII characters other than space, `"` and `\`. Scopes are sent space-delimited, so a value holding a space would be read as several. Consumers MUST reject a manifest that declares a scope that is not one.
+
 #### Identity claims
 
 - `identity_claims` (object) — OPTIONAL; maps AFPS identity keys to JSONPath queries (§7.7) evaluated against the connection's identity document (for example, the token response or the `userinfo_endpoint` response), e.g. `{ "account_id": "$.sub", "email": "$.email" }`. A query that selects nothing yields no value for its key.
@@ -975,6 +979,7 @@ For auth methods of `type` `api_key`, `basic`, `mtls`, or `custom`, `credentials
 
 - `credentials.schema` MUST be a self-contained JSON Schema 2020-12 document (the dialect adopted by §5). Each property defines a credential field the user must supply.
 - Any `$ref` inside `credentials.schema` MUST be a local fragment-only pointer (`#/...`). External or remote `$ref` MUST NOT be used. This keeps credential schemas offline-validatable and prevents schema-fetch SSRF (§8.7).
+- A credential field is **secret** when its property schema declares `writeOnly: true` or `format: "password"`. Consumers MUST decide on these two keywords alone, never on the field's name, whether to mask a field's input and to keep its value out of what they display. A producer therefore marks every secret field.
 
 ### 7.6 Credential Delivery
 
@@ -1023,6 +1028,8 @@ No specification standardizes runtime secret injection into environment variable
 
 Value templates reference the connection's credential fields as `{$credential.<field>}` and its connection variables (§7.12) as `{$variable.<name>}`; no other expression is rendered, and a consumer MUST reject a template carrying one. For an auth method with `connect` (§7.7), the credential fields are its declared outputs: output `<name>` is `{$credential.<name>}`. A credential field holds any [JSON] value (§7.5): a string is substituted as it is, any other value as its [JSON] text (`5432` renders `5432`, `true` renders `true`, `["a","b"]` renders `["a","b"]`), and a `null` value is an absent field. This rule applies to every `{$credential.<field>}` reference, in a value template as in an `authorized_uris` entry (§7.9).
 
+A consumer MAY let an agent issue an HTTP request through it and name the connection's credential fields as `{{<field>}}` placeholders in the request's URL, its header values and its text body, so that the agent never holds a value. Such a consumer MUST replace each placeholder under the rules §7.7 sets for a `connect.login` request: the same encoding by position in the URL, the same checks on a header value and on header names, and a body rendered only under a media type with a defined encoding, here that of the request's `Content-Type` header. The value is the field's rendered text, as above; outside a string literal of a JSON body it is a [JSON] string. Where the agent supplies the body as structured data that the consumer serializes, a value replaces its placeholder in that data and the serializer encodes it. The consumer MUST refuse, and MUST NOT send, a request that carries an unresolved placeholder, a value that cannot be encoded where it is placed, or a body that cannot be rendered; §7.9 applies to the rendered URL.
+
 ### 7.7 Declarative Credential Acquisition (connect)
 
 `connect` declares how a `custom` auth method acquires its credential without OAuth. It is valid only for `type: "custom"`. A `connect` object MUST contain exactly one of:
@@ -1063,11 +1070,20 @@ Value templates reference the connection's credential fields as `{$credential.<f
 ```
 
 - **`request`** — the inline HTTP request issued to obtain the credential. `content_type` declares the body's media type, sent as the `Content-Type` header unless `headers` sets one. `url`, header values, and `body` MAY carry `{{<name>}}` placeholders, each replaced by the user-supplied `credentials.schema` field `<name>` before the request is sent; an unresolved placeholder MUST fail the login. No other `{$…}` expression is evaluated in the request. A placeholder's value is never itself evaluated, and it is encoded for its position so that it cannot change the request's structure — add a URL component, a form parameter, a JSON member, an XML element, a multipart part or a header line:
-  - in `url`, a placeholder at the very start of the template is a base URL, inserted verbatim (the resulting URL is still checked against `authorized_uris`); every other placeholder is percent-encoded as one URI component, as ECMAScript `encodeURIComponent` does ([ECMA-262]), wherever it sits — so a template writes literally every `/`, `?` and `#` it needs (`https://example.com/{{tenant}}/login`, never `https://example.com{{path}}`);
-  - in a header value, the value is inserted verbatim; consumers MUST fail the login when it is not a valid field value ([RFC 9110] §5.5) or, in a `Cookie` header, when it holds a character outside `cookie-octet` ([RFC 6265] §4.1.1);
-  - in `body`, by the media type of the request's `Content-Type` header, else of `content_type`: `application/x-www-form-urlencoded` — encoded as one name or value by the [WHATWG URL] `application/x-www-form-urlencoded` serializer; JSON (`application/json`, `text/json`, `application/x-json`, any `+json`) — inside a string literal, escaped as a [JSON] string's characters, and anywhere else one [JSON] value of the field's `credentials.schema` type (a `string` field is a JSON string whatever its text, a `number` field a number); XML (`application/xml`, `text/xml`, any `+xml`) — `&`, `<`, `>`, `"` and `'` replaced by their predefined entities, except inside a CDATA section, where `]]>` is split across two sections; `multipart/*` — consumers MUST fail the login when the value holds CR or LF; any other media type — verbatim.
+  - in `url`, a placeholder at the very start of the template is a base URL, inserted verbatim (the resulting URL is still checked against `authorized_uris`); every other placeholder is percent-encoded as one URI component, as ECMAScript `encodeURIComponent` does ([ECMA-262]), wherever it sits — so a value is one path segment or one query component, and a template writes literally every `/`, `?` and `#` it needs (`https://example.com/{{tenant}}/login`, never `https://example.com{{path}}`). Consumers MUST fail the login when a path segment that carries a placeholder renders empty, `.` or `..`, a `%2e` or `%2E` written in the template counting as a dot: percent-encoding does not keep such a segment one segment;
+  - in a header value, the value is inserted verbatim; consumers MUST fail the login when it is not a valid field value ([RFC 9110] §5.5) or, in a `Cookie` header, when it holds a character outside `cookie-octet` ([RFC 6265] §4.1.1). A field value holds no CR, LF or NUL. `headers` MUST NOT write one header name twice, names compared case-insensitively;
+  - in `body`, by the media type of the request's `Content-Type` header, else of `content_type`. A body that carries a placeholder is rendered only under one of these media types:
+    - `application/x-www-form-urlencoded` — encoded as one name or value by the [WHATWG URL] `application/x-www-form-urlencoded` serializer;
+    - JSON (`application/json`, `text/json`, `application/x-json`, `application/x-ndjson`, any `+json`) — inside a string literal, escaped as a [JSON] string's characters, and anywhere else one [JSON] value of the field's `credentials.schema` type (a `string` field is a JSON string whatever its text, a `number` field a number);
+    - XML (`application/xml`, `text/xml`, any `+xml`) — `&`, `<`, `>`, `"` and `'` replaced by their predefined entities, except inside a CDATA section, where `]]>` is split across two sections; a `<![CDATA[` written inside a comment opens no section;
+    - `multipart/*` with a `boundary` parameter — verbatim; consumers MUST fail the login when the value holds CR, LF or the boundary delimiter (`--` followed by the boundary). On a header line of a part, a placeholder MUST sit inside a quoted string (`filename="{{name}}"`), where a value holding `"` or `\` fails the login too; a placeholder elsewhere on such a line fails it whatever the value;
+    - `text/plain` — verbatim.
 
-  A field value that is not a string is its [JSON] text, except in a JSON body outside a string literal; a `null` value is an absent field, so its placeholder is unresolved. A consumer that fails a login because a value cannot be encoded where it is placed MUST NOT send the request.
+    Under any other media type, under none, or when the `Content-Type` header or `content_type` itself carries a placeholder, a body that carries a placeholder MUST NOT be rendered and the request MUST NOT be sent. A body that carries no placeholder is sent as written.
+
+  A field value that is not a string is its [JSON] text, except in a JSON body outside a string literal; a `null` value is an absent field, so its placeholder is unresolved. A value that is not well-formed Unicode (a lone surrogate) cannot be encoded anywhere. A consumer that fails a login because a value cannot be encoded where it is placed MUST NOT send the request.
+
+  Consumers MUST reject, no later than when the manifest is installed or saved, a `connect.login` whose `request` writes a header name twice, or whose `body` carries a placeholder that the media-type rule above leaves unrendered.
 - **`success_criteria`** — an array of Arazzo Criterion objects (`condition`, optional `context`, optional `type` of `simple`/`regex`/`jsonpath`/`xpath`). When omitted, success is HTTP 2xx.
 - **`outputs`** — a map of named outputs. Each value is one of:
   - an **Arazzo runtime-expression string** (Arazzo §5.9): `$statusCode`, `$response.body`, `$response.body#/{json-pointer}` ([RFC 6901]), `$response.header.{name}`;
@@ -1540,6 +1556,7 @@ SCHEMA_VERSION_REGEX = ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$
 AUTH_KEY_REGEX       = ^[a-z][a-z0-9_]*$
 META_NAMESPACE_KEY   = ^([a-z0-9-]+(\.[a-z0-9-]+)+\/)?[A-Za-z0-9._-]+$
 VARIABLE_NAME_REGEX  = ^[a-z][a-z0-9_]*$
+SCOPE_TOKEN_REGEX    = ^[\x21\x23-\x5B\x5D-\x7E]+$
 URL_TEMPLATE_REGEX   = ^(?:\{\$variable\.[a-z][a-z0-9_]*\}|https:\/\/\{\$variable\.[a-z][a-z0-9_]*\}(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\/?$
 ```
 

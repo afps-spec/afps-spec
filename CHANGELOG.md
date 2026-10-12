@@ -1,5 +1,59 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-12
+
+Normative change to the 0.3 draft (no spec-version bump).
+
+### Changed
+
+- §7.6 a `{{<field>}}` placeholder an agent writes in a request it issues
+  through a consumer (URL, header values, text body) follows the `connect.login`
+  rules of §7.7: encoded for its position, the body by the request's
+  `Content-Type`, a bare placeholder of a JSON body rendered as a JSON string. A
+  request with an unresolved placeholder, a value it cannot carry or a body that
+  cannot be rendered is refused and not sent; §7.9 applies to the rendered URL.
+- §7.7 a path segment that carries a placeholder and renders empty, `.` or `..`
+  (`%2e` included) fails the login.
+- **Breaking:** §7.7 a body that carries a placeholder is rendered only under
+  JSON (now including `application/x-ndjson`), `application/x-www-form-urlencoded`,
+  XML, `multipart/*` with a `boundary`, or `text/plain`. Under any other media
+  type, under none, or when the `Content-Type` itself carries a placeholder, the
+  request is not sent, and a consumer rejects such a `connect.login` when the
+  manifest is installed or saved.
+- §7.7 multipart: a value holding the boundary delimiter fails the login; on a
+  part's header line a placeholder sits inside a quoted string, where a value
+  holding `"` or `\` fails it too.
+- §7.7 XML: a `<![CDATA[` inside a comment opens no section. A value that is
+  not well-formed Unicode fails the login.
+- §7.7 `headers` writes no header name twice, names compared
+  case-insensitively.
+- **Breaking:** §7.4 every scope a manifest declares (`default_scopes`,
+  `scope_catalog` values, `tools_policy.<name>.required_scopes`) is one
+  [RFC 6749] §3.3 `scope-token` (`SCOPE_TOKEN_REGEX`, Appendix B); consumers
+  reject a manifest declaring one that is not.
+- §7.5 a credential field is secret when its schema declares `writeOnly: true`
+  or `format: "password"`; consumers mask on those keywords, never on the
+  field's name. The example integrations mark their secret fields.
+
+### Migration
+
+Producers: give a `connect.login` body that carries a placeholder one of the
+media types above, written without a placeholder; declare each scope as one
+token (`["read", "write"]`, not `["read write"]`); mark every secret credential
+field. Consumers: apply the same request rendering to agent-issued requests as
+to a login, and reject the manifests above. Validate scopes with
+`@afps-spec/schema` 0.10.0.
+
+## Schema `@afps-spec/schema@0.10.0` — 2026-10-12
+
+Minor bump only: `0.x` makes no back-compat promise (as for 0.8.0 and 0.9.0).
+
+- **Breaking:** `default_scopes` entries, `scope_catalog[].value` and
+  `tools_policy.<name>.required_scopes` entries must match `SCOPE_TOKEN_REGEX`
+  (§7.4), exported from the package and carried as `pattern` in the generated
+  `v0/integration.schema.json`. 0.9.0 accepted any string there, an empty one
+  included for `default_scopes` and `required_scopes`.
+
 ## Spec 0.3 revision — 2026-10-10
 
 Normative change to the 0.3 draft (no spec-version bump).

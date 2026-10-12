@@ -39,6 +39,14 @@ const AUTH_KEY_REGEX = new RegExp(`^${IDENTIFIER_PATTERN}$`);
 /** VARIABLE_NAME_REGEX — names of an integration's connection variables (§7.12, Appendix B). */
 export const VARIABLE_NAME_REGEX = new RegExp(`^${IDENTIFIER_PATTERN}$`);
 
+/** SCOPE_TOKEN_REGEX — one OAuth scope, an RFC 6749 §3.3 `scope-token` (§7.4, Appendix B). */
+export const SCOPE_TOKEN_REGEX = /^[\x21\x23-\x5B\x5D-\x7E]+$/;
+
+/** A scope an integration manifest declares (§7.4). */
+const scopeToken = z.string().regex(SCOPE_TOKEN_REGEX, {
+  error: "Must be one OAuth scope token (RFC 6749 §3.3): no space, quote or backslash",
+});
+
 const VARIABLE_PLACEHOLDER = `\\{\\$variable\\.${IDENTIFIER_PATTERN}\\}`;
 /** One `{$variable.<name>}` placeholder; group 1 is the name. */
 const VARIABLE_REF = new RegExp(`\\{\\$variable\\.(${IDENTIFIER_PATTERN})\\}`, "g");
@@ -377,7 +385,7 @@ export const tokenEndpointAuthMethodEnum = z.enum([
 
 /** A single entry of an OAuth2 `scope_catalog` (§7.4). */
 const scopeCatalogEntry = z.looseObject({
-  value: z.string().min(1),
+  value: scopeToken,
   label: z.string().min(1),
   description: z.string().optional(),
   implies: z.array(z.string()).optional(),
@@ -537,7 +545,7 @@ export const authMethod = z.looseObject({
   resource: z.string().refine(notTemplated, { error: "Must not be templated; only issuer is (§7.3)" }).optional(),
   authorization_params: z.record(z.string(), z.unknown()).optional(),
   // scopes (§7.4)
-  default_scopes: z.array(z.string()).optional(),
+  default_scopes: z.array(scopeToken).optional(),
   scope_catalog: z.array(scopeCatalogEntry).optional(),
   identity_claims: z.record(z.string(), z.string()).optional(),
   required_identity_claims: z.array(z.string()).optional(),
@@ -559,7 +567,7 @@ export const authMethod = z.looseObject({
 // list scopes under multiple auths; an auth absent from the map serves the tool
 // with no scope requirement (e.g. a `pat` alongside a scoped `oauth`).
 const integrationToolMeta = z.looseObject({
-  required_scopes: z.record(z.string().regex(AUTH_KEY_REGEX), z.array(z.string())).optional(),
+  required_scopes: z.record(z.string().regex(AUTH_KEY_REGEX), z.array(scopeToken)).optional(),
 });
 
 // --- Setup guide (§7.10) ---
