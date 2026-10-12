@@ -23,6 +23,7 @@
           "properties": {
             "api_key": {
               "type": "string",
+              "writeOnly": true,
               "description": "Upstream API key"
             }
           },
