@@ -39,5 +39,6 @@
         }
       }
     }
-  }
+  },
+  "default_tools": ["fetch_json"]
 }

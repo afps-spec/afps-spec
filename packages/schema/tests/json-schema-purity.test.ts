@@ -208,6 +208,13 @@ describe("cross-field MUST rules injected into JSON Schema (lockstep with Zod su
     expect(delivery.allOf?.[1]?.then?.not).toBeDefined();
   });
 
+  test('§7.8 — default_tools "*" requires allow_undeclared_tools: true', () => {
+    const rule = integ.allOf?.find((r: any) => r.if?.properties?.default_tools?.const === "*");
+    expect(rule?.if?.required).toEqual(["default_tools"]);
+    expect(rule?.then?.properties?.allow_undeclared_tools?.const).toBe(true);
+    expect(rule?.then?.required).toEqual(["allow_undeclared_tools"]);
+  });
+
   test("§3.4 — server.type uv requires manifest_version 0.4", () => {
     const rule = mcp.allOf?.[0];
     expect(rule?.if?.properties?.server?.properties?.type?.const).toBe("uv");

@@ -612,7 +612,7 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 
 > The integration manifest uses the common-fields `icon` / `icons` (§3.1) for presentation.
 >
-> The integration manifest also accepts the tool-surface fields `tools_policy`, `hidden_tools`, and `allow_undeclared_tools` — full descriptions live under §7.8 (Per-Tool Policy) since they are part of the authentication / runtime-surface model rather than the structural envelope.
+> The integration manifest also accepts the tool-surface fields `tools_policy`, `hidden_tools`, `allow_undeclared_tools`, and `default_tools` — full descriptions live under §7.8 (Per-Tool Policy) since they are part of the authentication / runtime-surface model rather than the structural envelope.
 
 #### `INTEGRATION.md`
 - **Required**: MAY
@@ -690,7 +690,7 @@ The top-level `integrations_configuration` map, keyed by integration package id,
 
 Each key MUST be a scoped name (§2.2) that corresponds to an entry in `dependencies.integrations` — `dependencies.integrations` is the canonical declaration that an integration is a dependency, and configuration for an integration not declared there is an error. Each value is an object with the following OPTIONAL fields:
 
-- `tools` (array of strings or the wildcard literal `"*"`) — the integration tool names the agent consumes. Consumers use this selection to build the runtime tool allowlist exposed to the agent and to infer the minimum OAuth scope set (the union of the scopes required by the selected tools, §7.4). An absent or empty array means the agent selected no tools from this integration. The wildcard form `tools: "*"` opts the agent into every tool the upstream MCP server advertises at runtime; consumers MUST reject it unless the referenced integration declares `allow_undeclared_tools: true` (§7.8), and they MUST then use the selected auth's `default_scopes` (§7.4) as the agent's scope set instead of the per-tool union.
+- `tools` (array of strings or the wildcard literal `"*"`) — the integration tool names the agent consumes. Consumers use this selection to build the runtime tool allowlist exposed to the agent and to infer the minimum OAuth scope set (the union of the scopes required by the selected tools, §7.4). An empty array selects no tools. When `tools` is absent — the integration has no `integrations_configuration` entry, or its entry carries no `tools` — the agent inherits the integration's `default_tools` (§7.8) when the integration declares a non-empty array or `"*"`, and selects no tools otherwise; an inherited selection builds the tool allowlist as an explicit one does and contributes no per-tool scope inference (§7.4). Inheritance applies, as configuration does, to an integration declared in the agent's own `dependencies.integrations`, not to one reached only through a dependency of the agent (a skill's integration, for instance). An explicit `tools` value, the empty array included, always replaces the default. Whether a consumer accepts — publishes, or starts an execution of — an agent whose selection for a declared integration resolves to no tool is consumer-defined. The wildcard form `tools: "*"` opts the agent into every tool the upstream MCP server advertises at runtime; consumers MUST reject it unless the referenced integration declares `allow_undeclared_tools: true` (§7.8), and they MUST then use the selected auth's `default_scopes` (§7.4) as the agent's scope set instead of the per-tool union.
 - `scopes` (array of strings) — explicit OAuth scopes the agent requests from this integration, in addition to any inferred from `tools`. Consumers compute the effective requested scope set as the union across the agent's configured integrations (§7.4).
 - `auth_key` (string) — selects an `auths.<key>` entry when the referenced integration declares more than one auth method. When omitted, consumers select the integration's sole auth method, or apply consumer-defined policy when multiple exist.
 - `required` (boolean, default `false`) — when `true`, a consumer MUST NOT start an execution of the agent (§6.1) unless a credential for this integration — for the auth method `auth_key` selects, when set — is provided to that execution, whether or not `tools` selects any tool. When `false` or absent, a consumer MAY start the execution without one; when it does, it MUST present the integration to the agent as unavailable (§6.1) and SHOULD report it to whoever started the execution.
@@ -835,7 +835,7 @@ A consumer MAY construct an execution context from:
 - `prompt.md`;
 - validated `input` data;
 - resolved skills, MCP servers, and integrations; and
-- per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools` (a string array, or the wildcard literal `"*"` when permitted by the integration's `allow_undeclared_tools` — §7.8), `scopes`, `auth_key`, and `required`.
+- per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools` (a string array, or the wildcard literal `"*"` when permitted by the integration's `allow_undeclared_tools`; when absent, the selection is the integration's `default_tools`, if any — §7.8), `scopes`, `auth_key`, and `required`.
 
 Whether an execution may start without a credential for a declared integration, and how the agent is then told, is governed by `required` (§4.4).
 
@@ -952,7 +952,7 @@ OAuth scopes are declared in two AFPS fields, distinct from the non-authoritativ
 #### `default_scopes`
 - **Type**: array of strings
 - **Required**: MAY
-- **Description**: The baseline scope set requested when an agent does not request a narrower or wider set. The effective requested scopes for an agent are computed from the agent's `integrations_configuration.<id>` entry (§4.4) — the union of scopes inferred from its selected `tools` and any explicit `scopes` — defaulting to `default_scopes` when unspecified. When an agent uses the wildcard form `tools: "*"` (§7.8 `allow_undeclared_tools`) under an `oauth2` auth, per-tool scope inference is bypassed and `default_scopes` becomes the agent's scope set (still unioned with any explicit `scopes`); the integration MUST therefore declare a non-empty `default_scopes` on the targeted oauth2 auth. Non-`oauth2` auths (`api_key`, `basic`, `custom`, `mtls`) have no scope mechanism — they are wildcard-usable wholesale without `default_scopes`.
+- **Description**: The baseline scope set requested when an agent does not request a narrower or wider set. The effective requested scopes for an agent are computed from the agent's `integrations_configuration.<id>` entry (§4.4) — the union of scopes inferred from its selected `tools` and any explicit `scopes` — defaulting to `default_scopes` when unspecified. Tools an agent inherits from the integration's `default_tools` (§7.8) contribute no per-tool scope inference: the computation is that of an agent whose `tools` names none; an inherited `"*"` is the wildcard form described next. When an agent uses the wildcard form `tools: "*"`, written or inherited (§7.8 `allow_undeclared_tools`), under an `oauth2` auth, per-tool scope inference is bypassed and `default_scopes` becomes the agent's scope set (still unioned with any explicit `scopes`); the integration MUST therefore declare a non-empty `default_scopes` on the targeted oauth2 auth. Non-`oauth2` auths (`api_key`, `basic`, `custom`, `mtls`) have no scope mechanism — they are wildcard-usable wholesale without `default_scopes`.
 
 #### `scope_catalog`
 - **Type**: array of objects
@@ -1121,7 +1121,7 @@ When `integration.tools_policy.<name>` is declared, it **augments** the canonica
 
 #### `allow_undeclared_tools`
 
-`integration.allow_undeclared_tools` is an OPTIONAL boolean (default `false`). When `true`, an agent MAY set its `integrations_configuration.<id>.tools` to the wildcard literal `"*"` (§4.4). The runtime then disables the per-tool allowlist filter and passes through every tool the upstream MCP server advertises at run time, including tools the manifest does not enumerate in `tools_policy`.
+`integration.allow_undeclared_tools` is an OPTIONAL boolean (default `false`). When `true`, an agent MAY set its `integrations_configuration.<id>.tools` to the wildcard literal `"*"` (§4.4), and the integration MAY declare `default_tools: "*"` (below), which an agent whose `tools` is absent inherits as that wildcard. The runtime then disables the per-tool allowlist filter and passes through every tool the upstream MCP server advertises at run time, including tools the manifest does not enumerate in `tools_policy`.
 
 The integration MUST declare at least one **wildcard-usable** auth, defined as either:
 - a non-`oauth2` auth (`api_key`, `basic`, `custom`, `mtls`) — these grant access wholesale and carry no scope mechanism, so the wildcard surface is always usable under such an auth; or
@@ -1132,6 +1132,20 @@ When an agent picks an `oauth2` auth (via `integrations_configuration.<id>.auth_
 > **Note.** This is the integration author's opt-in to a coarse-grained, forward-compatible surface (e.g. a remote MCP that grows its toolset between manifest republishes). It preserves zero-trust: the agent author cannot bypass the policy table unless the integration author explicitly authorizes a blanket pass-through.
 >
 > **Note (placement).** Per-tool policy lives on the integration because the policy itself (the per-auth `required_scopes` map) is a property of how the credentialed binding is used, not of the server's tool list.
+
+#### `default_tools`
+
+`integration.default_tools` is an OPTIONAL array of tool names, or the wildcard literal `"*"`. It is the tool selection an agent inherits when it declares the integration and its `integrations_configuration.<id>.tools` is absent (§4.4): a consumer MUST build such an agent's tool allowlist from the integration's `default_tools` when the integration declares a non-empty one (a non-empty array, or `"*"`).
+
+```jsonc
+"default_tools": ["list_issues", "search_issues"]
+```
+
+- Each name MUST be a tool of the integration's canonical catalog, as resolved per `source.kind` above, that is neither listed in `hidden_tools` nor auto-hidden as a tool referenced by a `connect.tool`. Consumers SHOULD validate at install (or at publish, for a registry), wherever the catalog is known, that each name in `integration.default_tools` corresponds to such a tool. At run time a name the resolved catalog does not hold, or that is hidden, selects nothing: a consumer MUST NOT expose a tool on its account.
+- For `source.kind = none` there is no canonical catalog: the names are those of tools a vendor `_meta` extension supplies (§7.1) — and the wildcard, every such tool. A consumer MUST NOT reject the manifest on account of a name unless it recognises every `_meta` extension of the manifest that may supply tools; a name it cannot resolve selects nothing.
+- The wildcard `"*"` is valid only when the integration declares `allow_undeclared_tools: true` — the same condition as an agent's own `tools: "*"`. Consumers MUST reject an integration manifest that declares `default_tools: "*"` without `allow_undeclared_tools: true`.
+- An absent `default_tools`, or an empty array, declares no default. A consumer MUST NOT substitute a default of its own (for instance, every tool of the catalog): what an agent inherits is the integration author's decision and does not vary by consumer.
+- An inherited selection contributes no per-tool scope inference (§7.4). Producers SHOULD therefore list only tools whose `required_scopes` under an auth are covered, directly or through `scope_catalog[].implies`, by that auth's `default_scopes`: §7.4 requests `default_scopes` when the agent writes no `scopes`. The producer of an agent that inherits tools and writes `scopes` SHOULD also write the scopes those tools require, or list its `tools`.
 
 ### 7.9 URI Restrictions
 
@@ -1287,7 +1301,8 @@ Packages distributed through registries are subject to supply chain attacks incl
 - registries SHOULD provide a mechanism to yank or retract compromised versions;
 - consumers SHOULD verify package integrity after download;
 - consumers SHOULD pin dependency versions or use lock files for production deployments;
-- because an `mcp-server` bundles its dependencies into the archive (§3.4), consumers SHOULD verify the provenance of vendored dependencies recorded under `_meta` where available.
+- because an `mcp-server` bundles its dependencies into the archive (§3.4), consumers SHOULD verify the provenance of vendored dependencies recorded under `_meta` where available;
+- an agent that omits `tools` inherits `default_tools` (§7.8) from whichever integration version its range resolves to, so an integration update can widen the agent's tool surface without the agent changing: producers SHOULD limit `default_tools` to the tools an agent declaring the integration is expected to need, and SHOULD NOT declare `"*"` as a default without need; the producer of an agent that needs a fixed surface SHOULD list its `tools`; and consumers SHOULD show the inherited selection wherever they show what an agent can access.
 
 ### 8.6 URI Restrictions
 
@@ -1315,7 +1330,7 @@ OAuth discovery (§7.3) and credential schemas (§7.5) involve fetching or resol
 AFPS packages may process personally identifiable information (PII) through agent inputs, integration connections, and execution outputs:
 
 - consumers SHOULD document which data is transmitted to external services during agent execution;
-- consumers SHOULD provide users with visibility into what data an agent accesses via its `dependencies` declarations and per-integration `scopes` in `integrations_configuration` (§4.4);
+- consumers SHOULD provide users with visibility into what data an agent accesses via its `dependencies` declarations, its per-integration `scopes` in `integrations_configuration` (§4.4), and its tool selection, written or inherited (§7.8);
 - consumers SHOULD ensure that execution state, credentials, and intermediate data are appropriately managed according to data protection requirements;
 - registries SHOULD NOT require or store PII in package manifests beyond the `author` field.
 
@@ -1439,7 +1454,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `dependencies.mcp_servers` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
 | `dependencies.integrations` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
 | `integrations_configuration` | agent | map | MAY | per-integration config keyed by declared integration id (§4.4) | none |
-| `integrations_configuration.<id>.tools` | agent | string[] \| "*" | MAY | integration tool names the agent consumes; `"*"` opts into all upstream tools when the integration declares `allow_undeclared_tools: true` (§4.4, §7.4, §7.8) | none |
+| `integrations_configuration.<id>.tools` | agent | string[] \| "*" | MAY | integration tool names the agent consumes; `[]` selects none; when absent, the agent inherits the integration's `default_tools`, if any; `"*"` opts into all upstream tools when the integration declares `allow_undeclared_tools: true` (§4.4, §7.4, §7.8) | none |
 | `integrations_configuration.<id>.scopes` | agent | string[] | MAY | requested OAuth scopes for the integration (§7.4) | none |
 | `integrations_configuration.<id>.auth_key` | agent | string | MAY | selects an `auths.<key>` entry on the integration | none |
 | `integrations_configuration.<id>.required` | agent | boolean | MAY | when `true`, no execution of the agent starts without a credential for the integration (§4.4) | `false` |
@@ -1513,7 +1528,8 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `tools_policy` | integration | object | MAY | sparse per-tool policy table (augments canonical tool catalog of the referenced source); keys MUST resolve in the canonical catalog | none |
 | `tools_policy.<name>.required_scopes` | integration | object `{ <auth_key>: string[] }` | MAY | per-auth scopes a tool requires; each key a declared `auths` entry, scopes ⊆ that auth's `scope_catalog` (consent inference, not an exclusivity lock) | none |
 | `hidden_tools` | integration | string[] | MAY | tool names suppressed from the agent's surface; tools used as `connect.tool` are auto-hidden | none |
-| `allow_undeclared_tools` | integration | boolean | MAY | opt-in: when `true`, an agent MAY set `integrations_configuration.<id>.tools = "*"` to pass through every upstream tool (§7.8); requires ≥1 auth with non-empty `default_scopes` | `false` |
+| `allow_undeclared_tools` | integration | boolean | MAY | opt-in: when `true`, an agent MAY set `integrations_configuration.<id>.tools = "*"` to pass through every upstream tool, and the integration MAY declare `default_tools: "*"` (§7.8); requires ≥1 wildcard-usable auth (§7.8) | `false` |
+| `default_tools` | integration | string[] \| "*" | MAY | tool selection an agent inherits when its `integrations_configuration.<id>.tools` is absent (§4.4, §7.8); names are non-hidden tools of the canonical catalog or, for `source.kind = none`, tools a vendor `_meta` extension supplies; `"*"` requires `allow_undeclared_tools: true` | none |
 | `setup_guide` | integration | object | MAY | setup metadata | none |
 | `setup_guide.steps` | integration | object[] | MAY | ordered setup steps | none |
 | `setup_guide.steps[].label` | integration | string | MUST if step present | non-empty recommended | none |

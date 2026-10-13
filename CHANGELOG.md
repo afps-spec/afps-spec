@@ -1,5 +1,117 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-13
+
+Normative change to the 0.3 draft (no spec-version bump).
+
+### Added
+
+- §7.8 `default_tools` on the integration manifest (#38): OPTIONAL, an array
+  of tool names or the wildcard literal `"*"`. A consumer MUST build from a
+  non-empty one (a non-empty array, or `"*"`) the tool allowlist of an agent
+  that declares the integration and whose
+  `integrations_configuration.<id>.tools` is absent; an absent field or an
+  empty array declares no default, and a consumer MUST NOT substitute one of
+  its own. Each name MUST be a tool of the integration's canonical catalog
+  that is neither listed in `hidden_tools` nor auto-hidden as a
+  `connect.tool`; consumers SHOULD validate it wherever the catalog is known
+  (install, or publish for a registry), as for `tools_policy` keys, and at run
+  time a name the resolved catalog does not hold, or that is hidden, selects
+  nothing: a consumer MUST NOT expose a tool on its account. For
+  `source.kind = none` there is no canonical catalog: the names are those of
+  tools a vendor `_meta` extension supplies, and the wildcard, every such
+  tool. A consumer MUST NOT reject the manifest on account of a name unless it
+  recognises every `_meta` extension of the manifest that may supply tools; a
+  name it cannot resolve selects nothing. `"*"` is valid only with
+  `allow_undeclared_tools: true`, as for an agent's own `tools: "*"`;
+  consumers MUST reject an integration manifest that declares it otherwise.
+  An inherited selection contributes no per-tool scope inference: §7.4
+  computes the scope set as for an agent whose `tools` names none, and its
+  wildcard rule covers `tools: "*"` written or inherited. Producers SHOULD
+  list only tools whose `required_scopes` under an auth are covered, directly
+  or through `scope_catalog[].implies`, by that auth's `default_scopes`; the
+  producer of an agent that inherits tools and writes `scopes` SHOULD also
+  write the scopes those tools require, or list its `tools`. §3.5, §6.1 and
+  Appendix A list the field; §9 counts the inherited selection in what an
+  agent can access.
+- §8.5 an agent that omits `tools` inherits `default_tools` from whichever
+  integration version its range resolves to, so an integration update can
+  widen its tool surface: producers SHOULD limit `default_tools` to the tools
+  an agent declaring the integration is expected to need, and SHOULD NOT
+  declare `"*"` as a default without need; the producer of an agent that needs
+  a fixed surface SHOULD list its `tools`; and consumers SHOULD show the
+  inherited selection wherever they show what an agent can access.
+- §4.4 whether a consumer accepts — publishes, or starts an execution of — an
+  agent whose selection for a declared integration resolves to no tool is
+  consumer-defined.
+
+### Changed
+
+- **Breaking:** §4.4 an absent `tools` and an empty `tools` no longer mean the
+  same. An empty array selects no tools. An absent `tools` — no
+  `integrations_configuration` entry for an integration of the agent's own
+  `dependencies.integrations`, or an entry without `tools` — inherits the
+  integration's `default_tools` when the integration declares a non-empty
+  array or `"*"`, and selects no tools otherwise; both forms meant "no tools"
+  until now. An explicit `tools`, the empty array included, always replaces
+  the default. At this revision, only an agent declaring an integration that
+  carries `default_tools`, a field this specification did not define, changes
+  meaning; from then on, an agent with an absent `tools` and a version range
+  changes meaning whenever the integration it resolves adds the field in a
+  later compatible version. A minor revision only, as `0.x` makes no
+  back-compat promise.
+- **Breaking:** §7.8 an integration manifest whose top-level `default_tools`
+  is neither an array of strings nor `"*"`, or is `"*"` without
+  `allow_undeclared_tools: true`, no longer conforms; it was an unknown field
+  until now. A minor revision only, as `0.x` makes no back-compat promise.
+
+- Editorial: `examples/integration-local-mcp` declares
+  `"default_tools": ["fetch_json"]`, the one tool of the `mcp-server` it
+  references.
+
+### Migration
+
+Producers: nothing to change for a manifest without the key; `default_tools`
+is opt-in and a manifest without it means what it meant. An integration author
+declares it to say what an agent that selects nothing can call, and lists only
+tools whose `required_scopes` under an auth are covered, directly or through
+`scope_catalog[].implies`, by that auth's `default_scopes`. An agent that
+wants no tools from an integration that declares a default writes
+`"tools": []` where its consumer accepts an empty selection, or removes the
+integration from `dependencies.integrations` when it needs neither its tools
+nor its credential. An agent that needs a fixed tool surface lists its
+`tools`; one that inherits tools and writes `scopes` also writes the scopes
+those tools require.
+
+Consumers: when an agent's `tools` is absent, build its tool allowlist from
+the integration's `default_tools`, and from nothing when there is none — never
+from a default of their own — and let the inherited selection contribute no
+per-tool scope inference. At run time a name the resolved catalog does not
+hold, or that is hidden, selects nothing. For `source.kind = none`, do not
+reject the manifest on account of a name unless every `_meta` extension of
+the manifest that may supply tools is recognised; a name that cannot be
+resolved selects nothing. A consumer that does not implement this revision
+keeps exposing nothing for an absent `tools`: fewer tools, never more.
+Validate with `@afps-spec/schema` 0.10.0.
+
+## Schema `@afps-spec/schema@0.10.0` — 2026-10-13
+
+A manifest that validated under 0.9.0 still validates unless an integration
+carried a top-level `default_tools` that is neither an array of strings nor
+`"*"`, or `"*"` without `allow_undeclared_tools: true`. Minor bump only: `0.x`
+makes no back-compat promise (as for 0.4.0, 0.8.0 and 0.9.0).
+
+- Integration `default_tools: string[] | "*"`, optional (§7.8, #38): the same
+  shape as `integrations_configuration.<id>.tools`, one shared union in the
+  Zod source. The generated `v0/agent.schema.json` is unchanged. Catalog
+  membership of the names and their overlap with `hidden_tools` are consumer
+  checks, as catalog membership is for `tools_policy` keys.
+- **Breaking:** a `default_tools` that is neither an array of strings nor
+  `"*"`, or `"*"` without `allow_undeclared_tools: true`, is rejected. 0.9.0
+  accepted any value there, the field being unknown. The generated
+  `v0/integration.schema.json` carries the wildcard rule as an `if`/`then`, so
+  a JSON-Schema-only validator rejects it too.
+
 ## Spec 0.3 revision — 2026-10-10
 
 Normative change to the 0.3 draft (no spec-version bump).

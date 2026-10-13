@@ -36,7 +36,7 @@ const isCheck = process.argv.includes("--check");
  * JSON-only validators reject the same shapes the Zod runtime rejects.
  *
  * Keep these in lockstep with the `.superRefine` logic in `schemas.ts`
- * (§7.3, §7.5, §7.6, §7.7, §7.12, §3.4).
+ * (§7.3, §7.5, §7.6, §7.7, §7.8, §7.12, §3.4).
  */
 function applyCrossFieldRules(filename: string, schema: Record<string, any>): void {
   if (filename === "integration.schema.json") {
@@ -184,6 +184,12 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
         then: { not: { anyOf: [{ required: ["env"] }, { required: ["files"] }] } },
       },
     ];
+
+    // §7.8 — `default_tools: "*"` requires `allow_undeclared_tools: true`.
+    schema.allOf.push({
+      if: { properties: { default_tools: { const: "*" } }, required: ["default_tools"] },
+      then: { properties: { allow_undeclared_tools: { const: true } }, required: ["allow_undeclared_tools"] },
+    });
   }
 
   if (filename === "mcp-server.schema.json") {
