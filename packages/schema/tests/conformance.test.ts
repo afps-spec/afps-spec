@@ -1691,6 +1691,183 @@ describe("integration tools/uris/setup_guide (§7.8 – §7.10)", () => {
       },
     });
   });
+
+  // The single issue a manifest raises, asserted to sit on `default_tools`.
+  const defaultToolsIssue = (manifest: unknown) => {
+    const result = integrationManifestSchema.safeParse(manifest);
+    if (result.success) throw new Error("expected the manifest to be rejected");
+    expect(result.error.issues).toHaveLength(1);
+    const issue = result.error.issues[0]!;
+    expect(issue.path).toEqual(["default_tools"]);
+    return issue;
+  };
+  // Messages of the two branches of the `string[] | "*"` union, in order.
+  const unionBranchMessages = (manifest: unknown) => {
+    const issue = defaultToolsIssue(manifest);
+    if (issue.code !== "invalid_union") throw new Error(`expected invalid_union, got ${issue.code}`);
+    return issue.errors.map((branch) => branch.map((i) => `${i.path.join(".")}: ${i.message}`));
+  };
+  const NOT_THE_WILDCARD = ': Invalid input: expected "*"';
+
+  test("default_tools accepts an array of tool names, an empty array, or absence", () => {
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      default_tools: ["list_issues", "search_issues"],
+    });
+    // An empty array declares no default, like an absent field.
+    expectValid(integrationManifestSchema, { ...validIntegrationOauth2, default_tools: [] });
+    expectValid(integrationManifestSchema, validIntegrationOauth2);
+    // Names are not checked against `tools_policy`: the catalog is resolved
+    // per `source.kind`, outside the manifest.
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      tools_policy: { list_issues: { required_scopes: { oauth: ["repo"] } } },
+      default_tools: ["search_issues"],
+    });
+  });
+
+  test('default_tools: "*" is accepted when allow_undeclared_tools is true', () => {
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationApiKey,
+      allow_undeclared_tools: true,
+      default_tools: "*",
+    });
+  });
+
+  test('default_tools: "*" is rejected unless allow_undeclared_tools is true', () => {
+    for (const flag of [{}, { allow_undeclared_tools: false }]) {
+      const issue = defaultToolsIssue({ ...validIntegrationApiKey, ...flag, default_tools: "*" });
+      expect(issue.code).toBe("custom");
+      expect(issue.message).toBe('default_tools: "*" requires allow_undeclared_tools: true');
+      // A list of names carries no such requirement.
+      expectValid(integrationManifestSchema, { ...validIntegrationApiKey, ...flag, default_tools: ["search"] });
+    }
+  });
+
+  test('default_tools: "*" with allow_undeclared_tools: true still needs a wildcard-usable auth', () => {
+    const { default_scopes: _omitted, ...oauthWithoutScopes } = validIntegrationOauth2.auths.oauth;
+    for (const oauth of [oauthWithoutScopes, { ...oauthWithoutScopes, default_scopes: [] }]) {
+      const result = integrationManifestSchema.safeParse({
+        ...validIntegrationOauth2,
+        auths: { oauth },
+        allow_undeclared_tools: true,
+        default_tools: "*",
+      });
+      if (result.success) throw new Error("expected the manifest to be rejected");
+      // The flag's own rule rejects it; `default_tools` raises nothing.
+      expect(result.error.issues).toHaveLength(1);
+      const issue = result.error.issues[0]!;
+      expect(issue.code).toBe("custom");
+      expect(issue.path).toEqual(["allow_undeclared_tools"]);
+      expect(issue.message).toStartWith("allow_undeclared_tools: true requires at least one auth to be wildcard-usable");
+      expect(result.error.issues.filter((i) => i.path[0] === "default_tools")).toEqual([]);
+    }
+  });
+
+  test('default_tools: "*" with a non-boolean allow_undeclared_tools is rejected on the flag', () => {
+    for (const [flag, received] of [
+      ["true", "string"],
+      [null, "null"],
+    ] as const) {
+      const result = integrationManifestSchema.safeParse({
+        ...validIntegrationApiKey,
+        allow_undeclared_tools: flag,
+        default_tools: "*",
+      });
+      if (result.success) throw new Error("expected the manifest to be rejected");
+      // The type error on the flag is the only issue: cross-field rules run
+      // on a structurally valid manifest, so `default_tools` raises nothing.
+      expect(result.error.issues).toHaveLength(1);
+      const issue = result.error.issues[0]!;
+      expect(issue.code).toBe("invalid_type");
+      expect(issue.path).toEqual(["allow_undeclared_tools"]);
+      expect(issue.message).toBe(`Invalid input: expected boolean, received ${received}`);
+    }
+  });
+
+  test('default_tools: "*" is accepted on a source.kind "none" integration with a non-oauth2 auth', () => {
+    // The schema constrains the shape only: what the wildcard selects on a
+    // `none` source is the consumer's reading.
+    expect(validIntegrationApiKey.source.kind).toBe("none");
+    expect(validIntegrationApiKey.auths.token.type).toBe("api_key");
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationApiKey,
+      allow_undeclared_tools: true,
+      default_tools: "*",
+    });
+  });
+
+  test("default_tools rejects a non-string entry", () => {
+    expect(unionBranchMessages({ ...validIntegrationOauth2, default_tools: ["list_issues", 1] })).toEqual([
+      ["1: Invalid input: expected string, received number"],
+      [NOT_THE_WILDCARD],
+    ]);
+  });
+
+  test('default_tools rejects a bare string other than "*"', () => {
+    for (const value of ["all", "list_issues", ""]) {
+      expect(unionBranchMessages({ ...validIntegrationOauth2, default_tools: value })).toEqual([
+        [": Invalid input: expected array, received string"],
+        [NOT_THE_WILDCARD],
+      ]);
+    }
+  });
+
+  test("default_tools rejects a number, an object, a boolean, or null", () => {
+    for (const [value, received] of [
+      [3, "number"],
+      [{ list_issues: true }, "object"],
+      [true, "boolean"],
+      [null, "null"],
+    ] as const) {
+      expect(unionBranchMessages({ ...validIntegrationOauth2, default_tools: value })).toEqual([
+        [`: Invalid input: expected array, received ${received}`],
+        [NOT_THE_WILDCARD],
+      ]);
+    }
+  });
+
+  test("the generated JSON Schema mirrors the default_tools rules", () => {
+    const ajv = new Ajv2020({ strict: false, validateFormats: false, allErrors: true });
+    const validate = ajv.compile(JSON.parse(readFileSync(join(import.meta.dir, "../v0/integration.schema.json"), "utf8")));
+    // Every error a rejected manifest raises, as `<instancePath> <keyword>`.
+    const errorsOf = (manifest: unknown) => {
+      expect(validate(manifest)).toBe(false);
+      return (validate.errors ?? []).map((e) => `${e.instancePath} ${e.keyword}`);
+    };
+
+    expect(validate({ ...validIntegrationOauth2, default_tools: ["list_issues", "search_issues"] })).toBe(true);
+    expect(validate({ ...validIntegrationOauth2, default_tools: [] })).toBe(true);
+    expect(validate(validIntegrationOauth2)).toBe(true);
+    expect(validate({ ...validIntegrationApiKey, allow_undeclared_tools: true, default_tools: "*" })).toBe(true);
+
+    // A malformed value fails both branches of the `anyOf`, and nothing else.
+    const shapeErrorsOf = (value: unknown) => {
+      const errors = errorsOf({ ...validIntegrationOauth2, default_tools: value });
+      expect(errors).toContain("/default_tools anyOf");
+      expect(errors).toContain("/default_tools const");
+      expect(errors.filter((e) => !e.startsWith("/default_tools"))).toEqual([]);
+      return errors;
+    };
+    expect(shapeErrorsOf(["list_issues", 1])).toContain("/default_tools/1 type");
+    for (const value of ["all", 3, { list_issues: true }]) {
+      expect(shapeErrorsOf(value)).toContain("/default_tools type");
+    }
+    // "*" without the flag: the `if`/`then` rule fails, not the property shape.
+    expect(errorsOf({ ...validIntegrationApiKey, default_tools: "*" })).toEqual([" required", " if"]);
+    expect(errorsOf({ ...validIntegrationApiKey, allow_undeclared_tools: false, default_tools: "*" })).toEqual([
+      "/allow_undeclared_tools const",
+      " if",
+    ]);
+    // A non-boolean flag fails the `if`/`then` rule and its own `type`.
+    for (const flag of ["true", null]) {
+      expect(errorsOf({ ...validIntegrationApiKey, allow_undeclared_tools: flag, default_tools: "*" })).toEqual([
+        "/allow_undeclared_tools const",
+        " if",
+        "/allow_undeclared_tools type",
+      ]);
+    }
+  });
 });
 
 // ─────────────────────────────────────────────

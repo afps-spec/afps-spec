@@ -1082,6 +1082,20 @@
     "allow_undeclared_tools": {
       "type": "boolean"
     },
+    "default_tools": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "string",
+          "const": "*"
+        }
+      ]
+    },
     "setup_guide": {
       "type": "object",
       "properties": {
@@ -1251,6 +1265,28 @@
             }
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "default_tools": {
+            "const": "*"
+          }
+        },
+        "required": [
+          "default_tools"
+        ]
+      },
+      "then": {
+        "properties": {
+          "allow_undeclared_tools": {
+            "const": true
+          }
+        },
+        "required": [
+          "allow_undeclared_tools"
+        ]
       }
     }
   ]

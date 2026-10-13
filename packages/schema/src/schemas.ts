@@ -214,6 +214,11 @@ export const dependenciesSchema = z
 // Agent integrations_configuration (§4.4)
 // ─────────────────────────────────────────────
 
+// A tool selection: an array of tool names, or the wildcard literal `"*"`.
+// Shared by the agent's `integrations_configuration.<id>.tools` (§4.4) and
+// the integration's `default_tools` (§7.8).
+const toolSelection = z.union([z.array(z.string()), z.literal("*")]);
+
 /**
  * Per-integration agent configuration, keyed by the integration dependency id
  * (§4.4). Each key MUST correspond to an entry in `dependencies.integrations`
@@ -227,7 +232,7 @@ export const integrationConfigurationObject = z.looseObject({
   // The referenced integration MUST declare `allow_undeclared_tools: true`
   // (validated by consumers against the resolved integration manifest); the
   // schema only constrains the wire shape here.
-  tools: z.union([z.array(z.string()), z.literal("*")]).optional(),
+  tools: toolSelection.optional(),
   scopes: z.array(z.string()).optional(),
   auth_key: z
     .string()
@@ -1030,6 +1035,15 @@ export function createSchemas(majorVersion: number) {
       // preserves zero-trust: the agent author cannot bypass the policy
       // table unless the integration author explicitly authorizes it.
       allow_undeclared_tools: z.boolean().optional(),
+      // The tool selection an agent inherits when it declares this
+      // integration and its `integrations_configuration` entry carries no
+      // `tools` (§7.8, §4.4): tool names of the resolved catalog, or the
+      // wildcard `"*"`, valid only with `allow_undeclared_tools: true`
+      // (enforced in the `superRefine` below). An absent field or an empty
+      // array declares no default; an explicit agent-side `tools`, the
+      // empty array included, always replaces it. Catalog membership of
+      // the names is a consumer check, as for `tools_policy` keys.
+      default_tools: toolSelection.optional(),
       setup_guide: setupGuide.optional(),
     })
     .superRefine((val, ctx) => {
@@ -1069,6 +1083,17 @@ export function createSchemas(majorVersion: number) {
               "allow_undeclared_tools: true requires at least one auth to be wildcard-usable — either a non-oauth2 auth (api_key/basic/custom/mtls; no scope mechanism) or an oauth2 auth with non-empty default_scopes (used as the agent's scope set when tools = \"*\")",
           });
         }
+      }
+      // `default_tools: "*"` hands an agent that selects nothing every tool
+      // the upstream server advertises, so it is held to the same condition
+      // as an agent's own `tools: "*"`: the integration MUST declare
+      // `allow_undeclared_tools: true` (§7.8).
+      if (val.default_tools === "*" && val.allow_undeclared_tools !== true) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["default_tools"],
+          message: 'default_tools: "*" requires allow_undeclared_tools: true',
+        });
       }
     });
 
