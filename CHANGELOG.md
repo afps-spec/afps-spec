@@ -1,5 +1,29 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-15
+
+Normative change to the 0.3 draft (no spec-version bump).
+
+### Changed
+
+- §3.5 `INTEGRATION.md` follows the progressive disclosure of skills (§3.3).
+  At run start a consumer SHOULD disclose one catalog entry per integration
+  available for the run — package identity, manifest `description`, and the
+  file's location when present — instead of the file's content, and SHOULD
+  make the file readable on demand; the agent is expected to read it before
+  relying on the integration's API. A consumer whose runtime gives the agent
+  no file-read capability MAY inline the content instead. Integrations not
+  available for a run SHOULD NOT be listed as available. The file gains no
+  frontmatter: the manifest `description` is the catalog entry. The 500-line
+  producer guidance is unchanged.
+
+### Migration
+
+Producers: nothing to change. Consumers: disclose a catalog entry per
+available integration and expose `INTEGRATION.md` for on-demand reading
+instead of inlining it; inlining stays allowed when the agent has no
+file-read tool.
+
 ## Spec 0.3 revision — 2026-10-13
 
 Normative change to the 0.3 draft (no spec-version bump).

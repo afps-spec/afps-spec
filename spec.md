@@ -617,7 +617,16 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 #### `INTEGRATION.md`
 - **Required**: MAY
 - **Format**: Markdown file at archive root
-- **Description**: Optional companion file providing API documentation for agent consumption. When present, consumers SHOULD make this file available to the agent at run time. The file SHOULD contain concise API documentation optimized for language model consumption: key endpoints, request/response examples, common patterns, and important constraints. Producers SHOULD keep `INTEGRATION.md` under 500 lines to support progressive disclosure — detailed reference material belongs in external documentation.
+- **Description**: Optional companion file providing API documentation for agent consumption. When present, consumers SHOULD make this file available to the agent at run time, as described under Progressive disclosure below. The file SHOULD contain concise API documentation optimized for language model consumption: key endpoints, request/response examples, common patterns, and important constraints. The file has no required frontmatter: the manifest `description` serves as its catalog entry. Producers SHOULD keep `INTEGRATION.md` under 500 lines to support progressive disclosure — detailed reference material belongs in external documentation.
+
+#### Progressive disclosure
+
+Integration documentation follows the same staged loading as skills (§3.3):
+
+1. **Catalog entry**: at run start, a consumer SHOULD disclose to the agent one entry per integration available for the run — the package identity (§2.2), the manifest `description`, and the location of `INTEGRATION.md` when the package includes one — rather than the file's content;
+2. **Documentation** (as needed): the consumer SHOULD make `INTEGRATION.md` readable by the agent on demand at that location. The agent is expected to read it before relying on the integration's API.
+
+A consumer whose runtime gives the agent no file-read capability MAY instead include the content of `INTEGRATION.md` in the agent's context at run start. Integrations that are not available for a run (for example, a declared dependency with no usable connection) SHOULD NOT be listed as available.
 
 ## 4. Dependency Model
 
@@ -1534,7 +1543,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `setup_guide.steps` | integration | object[] | MAY | ordered setup steps | none |
 | `setup_guide.steps[].label` | integration | string | MUST if step present | non-empty recommended | none |
 | `setup_guide.steps[].url` | integration | string | MAY | URI recommended | none |
-| `INTEGRATION.md` | integration archive | file | MAY | optional API documentation for agent consumption | none |
+| `INTEGRATION.md` | integration archive | file | MAY | optional API documentation for agent consumption, disclosed by catalog entry and read on demand (§3.5); no required frontmatter | none |
 | `SKILL.md` frontmatter `name` | skill content | string | SHOULD | max 64 chars, lowercase alphanumeric and hyphens | none |
 | `SKILL.md` frontmatter `description` | skill content | string | SHOULD | max 1024 chars; missing value warns | none |
 | `SKILL.md` frontmatter `license` | skill content | string | MAY | license name or file reference | none |
