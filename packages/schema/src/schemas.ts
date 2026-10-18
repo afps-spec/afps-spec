@@ -595,19 +595,28 @@ export const OAUTH2_LOGIN_CONSUMER_PARAMS = [
 /** Login fields an oauth2 `connect.login` leaves to RFC 6749 §5.1 / §5.2 token-response processing (§7.7). */
 export const OAUTH2_LOGIN_RESPONSE_FIELDS = ["outputs", "success_criteria", "expires_in_output", "identity_outputs"] as const;
 
-/** Parameter names of an `application/x-www-form-urlencoded` body (WHATWG URL parsing; `+` is a space). */
-function formParameterNames(body: string): string[] {
-  return body
-    .split("&")
-    .filter((pair) => pair.length > 0)
-    .map((pair) => {
-      const name = pair.split("=", 1)[0]!.replace(/\+/g, " ");
-      try {
-        return decodeURIComponent(name);
-      } catch {
-        return name;
-      }
-    });
+/**
+ * An RFC 6749 §8.2 `param-name`, the literal form every parameter name of an
+ * oauth2 `connect.login` body takes (no percent-encoding, no placeholder, §7.7).
+ */
+export const OAUTH2_LOGIN_PARAM_NAME_PATTERN = "[A-Za-z0-9._-]+";
+
+/** `name=value` pairs of a form body, split on `&` and the first `=`, undecoded. */
+function formPairs(body: string): { name: string; value: string | undefined }[] {
+  return body.split("&").map((pair) => {
+    const at = pair.indexOf("=");
+    return at < 0 ? { name: pair, value: undefined } : { name: pair.slice(0, at), value: pair.slice(at + 1) };
+  });
+}
+
+/** A form value, decoded as the WHATWG URL form parser does (`+` is a space). */
+function decodeFormValue(value: string): string {
+  const spaced = value.replace(/\+/g, " ");
+  try {
+    return decodeURIComponent(spaced);
+  } catch {
+    return spaced;
+  }
 }
 
 /**
@@ -658,6 +667,9 @@ function refineOauth2Login(
   if (request.content_type !== "application/x-www-form-urlencoded") {
     issue([...requestAt, "content_type"], "an oauth2 connect.login request content_type MUST be application/x-www-form-urlencoded");
   }
+  if ((method.connect as Record<string, unknown>).limits !== undefined) {
+    issue(["connect", "limits"], "connect.limits MUST NOT be declared on an oauth2 auth method; the consumer's token-request limits apply");
+  }
   if (request.headers !== undefined) {
     issue([...requestAt, "headers"], "an oauth2 connect.login request MUST NOT declare headers; the consumer authenticates its client itself");
   }
@@ -665,12 +677,21 @@ function refineOauth2Login(
     issue([...requestAt, "body"], "an oauth2 connect.login request MUST declare a body carrying grant_type");
     return;
   }
-  const names = formParameterNames(request.body);
+  const pairs = formPairs(request.body);
+  const names = pairs.map((pair) => pair.name);
+  const literalName = new RegExp(`^${OAUTH2_LOGIN_PARAM_NAME_PATTERN}$`);
+  if (!names.every((name) => literalName.test(name))) {
+    issue([...requestAt, "body"], "every parameter name of an oauth2 connect.login request body MUST be a literal RFC 6749 param-name, never percent-encoded or a placeholder");
+  }
   if (!names.includes("grant_type")) {
     issue([...requestAt, "body"], "an oauth2 connect.login request body MUST carry grant_type");
   }
-  if (names.some((name) => name.includes("{{"))) {
-    issue([...requestAt, "body"], "a placeholder in an oauth2 connect.login request body MUST NOT stand for a parameter name");
+  const grantTypes = pairs.filter((pair) => pair.name === "grant_type").map((pair) => pair.value ?? "");
+  if (grantTypes.some((value) => value.includes("{{"))) {
+    issue([...requestAt, "body"], "the grant_type of an oauth2 connect.login request body MUST NOT carry a placeholder");
+  }
+  if (grantTypes.some((value) => decodeFormValue(value) === "password")) {
+    issue([...requestAt, "body"], "the grant_type of an oauth2 connect.login request body MUST NOT be password (RFC 9700 §2.4)");
   }
   for (const name of OAUTH2_LOGIN_CONSUMER_PARAMS) {
     if (names.includes(name)) {

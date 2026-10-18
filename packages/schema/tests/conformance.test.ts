@@ -1709,12 +1709,64 @@ describe("connect.login on an oauth2 auth method (§7.7)", () => {
       "an oauth2 connect.login request body MUST carry grant_type",
     );
     expectRejected(withRequest({ body: "refresh_token={{refresh_token}}" }));
+  });
+
+  test("parameter names are literal RFC 6749 param-names, refused alike by Zod and JSON Schema", () => {
+    const message = "every parameter name of an oauth2 connect.login request body MUST be a literal RFC 6749 param-name, never percent-encoded or a placeholder";
+    for (const extra of ["{{field}}=x", "client%5Fid=x", "a+b=x", "a b=x", "", "=x"]) {
+      const value = withRequest({ body: `${request.body}&${extra}` });
+      expectOnlyIssue(value, "auths.oauth.connect.login.request.body", message);
+      expectRejected(value);
+    }
+    // A percent-encoded grant_type is not grant_type: both validators refuse it.
+    const encoded = withRequest({ body: "grant%5Ftype=refresh_token&refresh_token={{refresh_token}}" });
+    expect(issuesOf(encoded)).toEqual([
+      `auths.oauth.connect.login.request.body ${message} (§7.7)`,
+      "auths.oauth.connect.login.request.body an oauth2 connect.login request body MUST carry grant_type (§7.7)",
+    ]);
+    expectRejected(encoded);
+    // Values keep the placeholder and encoding rules: both validators accept them.
+    for (const body of [`${request.body}&scope=a%20b+c`, `${request.body}&extra={{refresh_token}}&empty=`, "grant_type=refresh_token&refresh_token={{refresh_token}}&x=a=b"]) {
+      expectValid(integrationManifestSchema, withRequest({ body }));
+      expect(validate(withRequest({ body }))).toBe(true);
+    }
+  });
+
+  test("grant_type is never password nor a placeholder", () => {
+    for (const grant of ["password", "pass%77ord", "%70%61%73%73%77%6Frd", "pass%77%6frd"]) {
+      const value = withRequest({ body: `grant_type=${grant}&username={{refresh_token}}` });
+      expectOnlyIssue(
+        value,
+        "auths.oauth.connect.login.request.body",
+        "the grant_type of an oauth2 connect.login request body MUST NOT be password (RFC 9700 §2.4)",
+      );
+      expectRejected(value);
+    }
+    // A duplicate grant_type is checked too.
+    expectRejected(withRequest({ body: `${request.body}&grant_type=password` }));
+    const templated = withRequest({ body: "grant_type={{refresh_token}}&refresh_token={{refresh_token}}" });
     expectOnlyIssue(
-      withRequest({ body: "grant_type=password&{{field}}=x" }),
+      templated,
       "auths.oauth.connect.login.request.body",
-      "a placeholder in an oauth2 connect.login request body MUST NOT stand for a parameter name",
+      "the grant_type of an oauth2 connect.login request body MUST NOT carry a placeholder",
     );
-    expectRejected(withRequest({ body: "grant_type=password&{{field}}=x" }));
+    expectRejected(templated);
+    // Other grants, and values merely containing `password`, are accepted by both.
+    for (const grant of ["passwords", "my_password", "client_credentials"]) {
+      const value = withRequest({ body: `grant_type=${grant}&refresh_token={{refresh_token}}` });
+      expectValid(integrationManifestSchema, value);
+      expect(validate(value)).toBe(true);
+    }
+  });
+
+  test("connect.limits is refused", () => {
+    const value = withAuth({ connect: { login: { request }, limits: { request_timeout_ms: 1000 } } });
+    expectOnlyIssue(
+      value,
+      "auths.oauth.connect.limits",
+      "connect.limits MUST NOT be declared on an oauth2 auth method; the consumer's token-request limits apply",
+    );
+    expectRejected(value);
   });
 
   test("the body MUST NOT carry client authentication or resource", () => {
@@ -1727,8 +1779,6 @@ describe("connect.login on an oauth2 auth method (§7.7)", () => {
       );
       expectRejected(value);
     }
-    // A percent-encoded name is the same parameter (decoding is Zod only).
-    expectInvalid(integrationManifestSchema, withRequest({ body: `${request.body}&client%5Fid=x` }));
     // A parameter value that merely mentions a forbidden name is not that parameter.
     expectValid(integrationManifestSchema, withRequest({ body: `${request.body}&audience=client_id` }));
   });

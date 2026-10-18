@@ -183,12 +183,12 @@ describe("cross-field MUST rules injected into JSON Schema (lockstep with Zod su
     const connect = allOf.find((r: any) => r.if?.required?.length === 1 && r.if.required[0] === "connect");
     expect(connect?.then?.properties?.type?.enum).toEqual(["custom", "oauth2"]);
     expect(connect?.then?.properties?.connect?.oneOf?.length).toBe(2);
-    // connect on oauth2 → login only, token_endpoint + credentials.schema required
+    // connect on oauth2 → login only, no limits, token_endpoint + credentials.schema required
     const oauth2Connect = allOf.find(
       (r: any) => r.if?.properties?.type?.const === "oauth2" && r.if?.required?.includes("connect"),
     );
     expect(oauth2Connect?.then?.required).toEqual(["token_endpoint", "credentials"]);
-    expect(oauth2Connect?.then?.properties?.connect?.not).toEqual({ required: ["tool"] });
+    expect(oauth2Connect?.then?.properties?.connect?.not).toEqual({ anyOf: [{ required: ["tool"] }, { required: ["limits"] }] });
   });
 
   test("§7.3 — oauth2 issuer-or-endpoints rule is gated on a non-remote source", () => {

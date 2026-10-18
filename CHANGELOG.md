@@ -15,24 +15,38 @@ Normative change to the 0.3 draft (no spec-version bump).
   `url` MUST equal `token_endpoint` (string equality, neither templated),
   `content_type` MUST be `application/x-www-form-urlencoded`, `headers` MUST
   NOT be declared, and `body` carries `grant_type` and that grant's
-  parameters, filled from `credentials.schema` with the §7.7 encoding rules; a
-  placeholder MUST NOT stand for a parameter name, and the body MUST NOT carry
-  `client_id`, `client_secret`, `client_assertion`, `client_assertion_type` or
-  `resource`. The consumer authenticates its client itself per
-  `token_endpoint_auth_method` (RFC 6749 §2.3, RFC 7591 §2) with the client
-  the connection is bound to — the client that later refreshes it — adds the
-  RFC 8707 `resource` when it sends one, and MUST NOT send the request when
-  §7.3 client binding forbids presenting that client to `token_endpoint`.
-  `outputs`, `success_criteria`, `expires_in_output` and `identity_outputs`
-  MUST NOT be declared: the response is an RFC 6749 §5.1 token response or a
-  §5.2 error response, and a consumer MUST NOT store a connection from
-  anything but a successful token response. A submitted `refresh_token`
-  remains the connection's refresh token when the response omits one (RFC
-  6749 §6). Identity follows §7.4 as for the authorization-code flow. Such an
-  auth method MUST declare `token_endpoint` and `credentials.schema`, MUST NOT
-  declare a templated `issuer` or `scope_catalog`, and MUST NOT be declared
-  under a `remote` source; once acquired, its connection expires, refreshes
-  and rotates as any `oauth2` connection.
+  parameters. Every parameter name is written literally as an RFC 6749 §8.2
+  `param-name` (never percent-encoded, never a placeholder); values are filled
+  from `credentials.schema` with the §7.7 encoding rules. `grant_type` carries
+  no placeholder and MUST NOT be `password` (RFC 9700 §2.4), and the body MUST
+  NOT carry `client_id`, `client_secret`, `client_assertion`,
+  `client_assertion_type` or `resource`. `default_scopes` adds nothing to the
+  request: a needed `scope` is written in the body. The consumer authenticates
+  its client itself per `token_endpoint_auth_method` (RFC 6749 §2.3, RFC 7591
+  §2) with the client the connection is bound to — the client that later
+  refreshes it — never with a method it does not implement and never falling
+  back to another, adds the RFC 8707 `resource` when it sends one, and MUST
+  NOT send the request when §7.3 client binding forbids presenting that client
+  to `token_endpoint` — with an `issuer`, unless `token_endpoint` is the token
+  endpoint of that issuer's validated metadata. It SHOULD present a grant at
+  most once per user submission (RFC 9700 §4.14.2). `outputs`,
+  `success_criteria`, `expires_in_output`, `identity_outputs` and
+  `connect.limits` MUST NOT be declared: the response is an RFC 6749 §5.1
+  token response (`access_token` and `token_type` REQUIRED) or a §5.2 error
+  response, and a consumer MUST NOT store a connection from anything but a
+  successful token response, nor one whose `token_type` it cannot use for
+  delivery (this specification defines `Bearer`, RFC 6750). For a
+  `refresh_token` grant whose response omits `refresh_token`, the grant's
+  `refresh_token` parameter as sent remains the connection's refresh token
+  (RFC 6749 §6); nothing is kept for other grants. The granted scope is the
+  response's `scope`, else the request's `scope`, else unknown. Identity comes
+  from `identity_claims` over the token response and `userinfo_endpoint`
+  (§7.4); an `id_token` counts only once validated per OpenID Connect Core
+  §3.1.3.7. Such an auth method MUST declare `token_endpoint` and
+  `credentials.schema`, MUST NOT declare a templated `issuer` or
+  `scope_catalog`, and MUST NOT be declared under a `remote` source; once
+  acquired, its connection expires, refreshes and rotates as any `oauth2`
+  connection.
 
 ### Changed
 
