@@ -1,5 +1,38 @@
 # Changelog
 
+## Schema `@afps-spec/schema@0.12.0` — 2026-10-19
+
+Validates the §7.1 revision below. Capability URLs are removed: a manifest
+whose `source.remote.url` carries a `{$credential.<field>}` placeholder, or
+whose auth method omits `delivery`, is invalid again under both Zod and the
+generated JSON Schema. No implementation shipped capability URLs, so no
+published manifest is expected to break. Minor bump only: `0.x` makes no
+back-compat promise.
+
+- `CAPABILITY_URL_REGEX` is no longer exported.
+- `auths.<key>.delivery` is required again on every auth method.
+- Unauthenticated integrations (`auths` absent, §7.2) are unchanged.
+- Example `integration-capability-url` removed.
+
+## Spec 0.3 revision — 2026-10-19 (capability URLs removed)
+
+Normative change to the 0.3 draft (no spec-version bump). Validate with
+`@afps-spec/schema` 0.12.0.
+
+### Removed
+
+- §7.1 capability URLs, added by the 2026-10-18 revision below:
+  `source.remote.url` is again a URL or a §7.12 URL template, and carries no
+  `{$credential.<field>}` placeholder. The reference implementation dropped
+  the feature before shipping it: keeping a secret URL out of every log and
+  error path cost more than the use case was worth. A server that authorizes
+  by a secret URL can still be declared with that URL as a literal
+  `source.remote.url`; the secret is then part of the manifest, which its
+  author keeps private. Every auth method MUST
+  again declare `delivery` (§7.2, §7.6); §8.3 and Appendices A and B lose
+  their capability-URL clauses, and the [Capability URLs] reference is gone.
+- Unauthenticated integrations (§7.2) and the §7.8 wildcard exception stay.
+
 ## Schema `@afps-spec/schema@0.11.0` — 2026-10-18
 
 Validates the §7.1 / §7.2 revision below. A manifest that validated under

@@ -201,17 +201,16 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
         },
       },
     ];
-    // §7.3 — a variable-templated `source.remote.url` leaves every oauth2 auth's
-    // endpoints and `resource` to remote MCP authorization; an issuer is then a
-    // template (over the URL's variables: Zod only). A capability URL's
-    // credential segment (§7.1) chooses no upstream.
+    // §7.3 — a templated `source.remote.url` leaves every oauth2 auth's endpoints
+    // and `resource` to remote MCP authorization; an issuer is then a template
+    // (over the URL's variables: Zod only).
     schema.allOf.push({
       if: {
         properties: {
           source: {
             properties: {
               kind: { const: "remote" },
-              remote: { properties: { url: { pattern: "\\{\\$variable\\." } }, required: ["url"] },
+              remote: { properties: { url: { pattern: "\\{\\$" } }, required: ["url"] },
             },
             required: ["kind", "remote"],
           },
@@ -260,37 +259,6 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
           tools_policy: { additionalProperties: { not: { required: ["required_scopes"] } } },
         },
       },
-    });
-
-    // §7.1 — a capability URL needs `auths`, every method user-supplied (no
-    // oauth2, no `connect`; the field being a required string of its
-    // credentials.schema is Zod only), `delivery` then optional. §7.6 —
-    // otherwise every auth method declares `delivery`.
-    schema.allOf.push({
-      if: {
-        properties: {
-          source: {
-            properties: {
-              kind: { const: "remote" },
-              remote: { properties: { url: { pattern: "\\{\\$credential\\." } }, required: ["url"] },
-            },
-            required: ["kind", "remote"],
-          },
-        },
-        required: ["source"],
-      },
-      then: {
-        required: ["auths"],
-        properties: {
-          auths: {
-            additionalProperties: {
-              properties: { type: { not: { const: "oauth2" } } },
-              not: { required: ["connect"] },
-            },
-          },
-        },
-      },
-      else: { properties: { auths: { additionalProperties: { required: ["delivery"] } } } },
     });
 
     // §7.6 — ≥1 delivery channel; http exclusive of env/files.
