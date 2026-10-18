@@ -187,7 +187,7 @@ resolved selects nothing. A consumer that does not implement this revision
 keeps exposing nothing for an absent `tools`: fewer tools, never more.
 Validate with `@afps-spec/schema` 0.10.0.
 
-## Schema `@afps-spec/schema@0.10.0` — 2026-10-13
+## Schema `@afps-spec/schema@0.10.0` — 2026-10-18
 
 A manifest that validated under 0.9.0 still validates unless an integration
 carried a top-level `default_tools` that is neither an array of strings nor
