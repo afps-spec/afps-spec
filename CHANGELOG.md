@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased — draft
+
+Normative change to the 0.3 draft (no spec-version bump). Draft for review.
+
+### Added
+
+- §7.2 unauthenticated integrations: `auths` is OPTIONAL, and an integration
+  that omits it needs no credential (a public remote MCP server — MCP
+  authorization is OPTIONAL — or a local server that reaches nothing
+  private). An empty `auths` object is rejected: absence is the only
+  spelling. The source MUST be `local` or `remote`. A consumer injects no
+  credential and, without `variables`, requires no connection; with
+  `variables`, a connection holds only their values. `auth_key` is rejected
+  for such an integration (§4.4), and a server that answers with an
+  authorization challenge is reported unavailable, never authorized ad hoc.
+- §7.1 capability URLs: `source.remote.url` MAY carry exactly one
+  `{$credential.<field>}` placeholder filling a whole path segment
+  (`CAPABILITY_URL_REGEX`, Appendix B), for a server that authorizes a
+  client by a secret URL and sends no challenge. The host stays literal or a
+  §7.12 URL template; the credential never fills the authority, part of a
+  segment, a query or a fragment, and the URL is `https`. Every auth method
+  is then user-supplied (no `oauth2`, no `connect`) and declares the field as
+  a required string; it MAY omit `delivery` (§7.6). The value renders
+  percent-encoded as one segment; an empty, `.` or `..` value is refused.
+  The rendered URL is a credential (§8.3): stored encrypted, never in a
+  manifest, log, error, or anything exposed to an agent, and sent only to
+  the rendered `source.remote.url`.
+- §7.8: `allow_undeclared_tools` needs a wildcard-usable auth only when the
+  integration declares auth methods; an unauthenticated integration declares
+  no `required_scopes`.
+
+### Changed
+
+- `@afps-spec/schema`: `auths` and `auths.<key>.delivery` are optional
+  properties; conditional rules in the generated JSON Schema restore what Zod
+  enforces (a `none` source and a capability URL need `auths`; a capability
+  URL admits no `oauth2` and no `connect`; `delivery` is required outside a
+  capability URL; an unauthenticated integration declares no
+  `required_scopes`). `CAPABILITY_URL_REGEX` is exported from the package
+  entry.
+- New examples `integration-public-remote` and `integration-capability-url`.
+
 ## Spec 0.3 revision — 2026-10-18
 
 Normative change to the 0.3 draft (no spec-version bump).

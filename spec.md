@@ -578,7 +578,7 @@ The `server` / `tools` / `user_config` fields adopt the MCPB vocabulary verbatim
 
 ### 3.5 Integration Package
 
-An `integration` package is manifest-only (plus an optional `INTEGRATION.md` companion). It describes a **credentialed binding to an external service**: which capability surface the service is reached through (`source`), how the caller authenticates (`auths`), how an acquired credential is injected at runtime (`delivery`), and optional per-tool metadata. The full authentication model is specified in §7.
+An `integration` package is manifest-only (plus an optional `INTEGRATION.md` companion). It describes a **binding to an external service**: which capability surface the service is reached through (`source`), how the caller authenticates (`auths`, absent for a service that needs no credential), how an acquired credential is injected at runtime (`delivery`), and optional per-tool metadata. The full authentication model is specified in §7.
 
 An integration is service-centric: the service (for example Gmail, Stripe) is the identity, and the capability source is one way to reach it. Authentication is bound to the integration, not to the source. An integration is an AFPS-native manifest; it is never an MCPB manifest and is not installed directly into an MCPB host. When an integration's `source.kind` is `local`, it references an `mcp-server` package (§7.1); the integration's authentication layer is applied by the AFPS runtime on top of that server.
 
@@ -596,9 +596,9 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 
 #### `auths`
 - **Type**: object
-- **Required**: MUST for `integration`
-- **Format**: map keyed by an auth-method key matching `^[a-z][a-z0-9_]*$`; each value is an auth-method object (§7.2). At least one entry is REQUIRED.
-- **Description**: One or more authentication methods the integration supports. See §7 for the full vocabulary.
+- **Required**: MAY (MUST when `source.kind` is `none` or `source.remote.url` carries a credential, §7.1)
+- **Format**: map keyed by an auth-method key matching `^[a-z][a-z0-9_]*$`; each value is an auth-method object (§7.2). When present, at least one entry is REQUIRED.
+- **Description**: The authentication methods the integration supports. An integration that omits `auths` is unauthenticated (§7.2). See §7 for the full vocabulary.
 - **Example**: `{ "oauth": { "type": "oauth2", "issuer": "https://accounts.google.com", "delivery": { "http": { "in": "header", "name": "Authorization", "prefix": "Bearer ", "value": "{$credential.access_token}" } } } }`
 - **Default**: none
 
@@ -701,8 +701,8 @@ Each key MUST be a scoped name (§2.2) that corresponds to an entry in `dependen
 
 - `tools` (array of strings or the wildcard literal `"*"`) — the integration tool names the agent consumes. Consumers use this selection to build the runtime tool allowlist exposed to the agent and to infer the minimum OAuth scope set (the union of the scopes required by the selected tools, §7.4). An empty array selects no tools. When `tools` is absent — the integration has no `integrations_configuration` entry, or its entry carries no `tools` — the agent inherits the integration's `default_tools` (§7.8) when the integration declares a non-empty array or `"*"`, and selects no tools otherwise; an inherited selection builds the tool allowlist as an explicit one does and contributes no per-tool scope inference (§7.4). Inheritance applies, as configuration does, to an integration declared in the agent's own `dependencies.integrations`, not to one reached only through a dependency of the agent (a skill's integration, for instance). An explicit `tools` value, the empty array included, always replaces the default. Whether a consumer accepts — publishes, or starts an execution of — an agent whose selection for a declared integration resolves to no tool is consumer-defined. The wildcard form `tools: "*"` opts the agent into every tool the upstream MCP server advertises at runtime; consumers MUST reject it unless the referenced integration declares `allow_undeclared_tools: true` (§7.8), and they MUST then use the selected auth's `default_scopes` (§7.4) as the agent's scope set instead of the per-tool union.
 - `scopes` (array of strings) — explicit OAuth scopes the agent requests from this integration, in addition to any inferred from `tools`. Consumers compute the effective requested scope set as the union across the agent's configured integrations (§7.4).
-- `auth_key` (string) — selects an `auths.<key>` entry when the referenced integration declares more than one auth method. When omitted, consumers select the integration's sole auth method, or apply consumer-defined policy when multiple exist.
-- `required` (boolean, default `false`) — when `true`, a consumer MUST NOT start an execution of the agent (§6.1) unless a credential for this integration — for the auth method `auth_key` selects, when set — is provided to that execution, whether or not `tools` selects any tool. When `false` or absent, a consumer MAY start the execution without one; when it does, it MUST present the integration to the agent as unavailable (§6.1) and SHOULD report it to whoever started the execution.
+- `auth_key` (string) — selects an `auths.<key>` entry when the referenced integration declares more than one auth method. When omitted, consumers select the integration's sole auth method, or apply consumer-defined policy when multiple exist. A consumer MUST reject an `auth_key` for an unauthenticated integration (§7.2).
+- `required` (boolean, default `false`) — when `true`, a consumer MUST NOT start an execution of the agent (§6.1) unless a credential for this integration (for an unauthenticated integration, its connection when it declares `variables`; nothing otherwise) — for the auth method `auth_key` selects, when set — is provided to that execution, whether or not `tools` selects any tool. When `false` or absent, a consumer MAY start the execution without one; when it does, it MUST present the integration to the agent as unavailable (§6.1) and SHOULD report it to whoever started the execution.
 
 Producers MAY add fields under `_meta` within a configuration object (§10).
 
@@ -881,14 +881,26 @@ An integration authenticates the **upstream-credential hop** — the credential 
 ```
 
 - **`local`** — `source.server` references an `mcp-server` package by its AFPS package identity (`name`, a scoped name per §2.2) and a semver `version` range. This is the only source whose referenced server is itself a standalone MCPB-runnable artifact; the integration's authentication layer is applied by the AFPS runtime on top. The optional `vendored` boolean records that the referenced MCP server was vendored into the publishing pipeline at build time (MCPB bundles dependencies into the archive rather than resolving registry references at install time). Build-provenance for a vendored foreign package (for example a [Package URL]) MAY be recorded under `_meta`; it is never the reference mechanism.
-- **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source has no `mcp-server` package and no `.mcpb` form. When the endpoint's location varies per connection (a self-hosted instance, a tenant host), `url` MAY be a URL template over connection variables (§7.12), e.g. `{$variable.base_url}/mcp`.
+- **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source has no `mcp-server` package and no `.mcpb` form. When the endpoint's location varies per connection (a self-hosted instance, a tenant host), `url` MAY be a URL template over connection variables (§7.12), e.g. `{$variable.base_url}/mcp`. When the endpoint's URL itself is the secret, `url` MAY be a capability URL (below).
 - **`none`** — the integration declares no MCP backing. It exposes no MCP-tool catalog of its own; any capabilities it offers come from vendor `_meta` extensions (§10) — for example a runtime that injects credentials into a direct HTTP surface. The `kind` discriminant carries no further spec-defined fields. Vendor extensions are non-normative: a runtime that does not recognise them sees an integration with auth methods and no tools.
 
 A source whose surface is not a local MCP server (`remote`, or `none`) cannot be expressed as an `mcp-server` package and has no `.mcpb` form. This is a property of the source kind, not a runnability gradient.
 
+#### Capability URLs
+
+Some hosted MCP servers authorize a client by the URL alone: each user receives an endpoint whose path holds a secret, and the server sends no authorization challenge ([Capability URLs]). Such a secret is a credential, not part of the package: a manifest is published, shared and logged, and the secret is a user's. `source.remote.url` therefore names it with a placeholder, as a **capability URL** matching `CAPABILITY_URL_REGEX` (Appendix B):
+
+- the URL is an `https://` URL with a literal host (and an optional port from 1 to 65535, without leading zeros) that parses as a [WHATWG URL] once the placeholder is filled, or a URL template of §7.12, whose path holds exactly one segment that is a whole `{$credential.<field>}` placeholder, e.g. `https://mcp.example.com/{$credential.secret}/mcp`. The placeholder never fills the scheme, the authority, part of a segment, a query, or a fragment: the credential never chooses where it is sent, and the [Model Context Protocol authorization model] forbids credentials in the query string;
+- the integration MUST declare `auths`, and every auth method MUST be one whose credential the user supplies — not of `type: "oauth2"` and without `connect` (§7.7) — and MUST declare `<field>` as a property of `credentials.schema` (§7.5) of `type: "string"`, listed in its `required`. Such an auth method MAY omit `delivery` (§7.6): the URL is its delivery. It MAY also declare `delivery.http` for a server that wants the same or another credential in a header;
+- a consumer renders the URL for each connection by substituting the credential's value, percent-encoded as one URI component as ECMAScript `encodeURIComponent` does ([ECMA-262]), so that it stays one segment; a variable of the URL renders first, per §7.12. A value that is empty, `.`, or `..` cannot be rendered: a consumer MUST refuse to create a connection with it, and MUST NOT use such a connection;
+- the rendered URL is a credential (§8.3): a consumer MUST store the value encrypted, MUST NOT include the rendered URL in a manifest, a log entry, an error message, or anything it exposes to an agent, and SHOULD show users the template, or the rendered URL with the secret segment masked. It MUST NOT send the value to any URL but the rendered `source.remote.url`; requests to that URL are authorized by the manifest itself, whatever `authorized_uris` (§7.9) declares;
+- a consumer that does not implement capability URLs MUST treat an integration whose `source.remote.url` carries a `{$credential.<field>}` placeholder as unusable.
+
+Producers SHOULD prefer `delivery.http` when the server also accepts its credential in a header: a URL travels through more logs and histories than a header does.
+
 ### 7.2 Auth Methods
 
-`auths` is a map of one or more named authentication methods. The key matches `^[a-z][a-z0-9_]*$` and disambiguates methods when a manifest declares more than one. Each value is an object whose `type` selects the authentication model:
+`auths` is a map of one or more named authentication methods. It is OPTIONAL (below). The key matches `^[a-z][a-z0-9_]*$` and disambiguates methods when a manifest declares more than one. Each value is an object whose `type` selects the authentication model:
 
 - `oauth2` — OAuth 2.0 / OpenID Connect (§7.3), its first token acquired through the authorization-code flow or, when it declares `connect.login`, by a token request (§7.7);
 - `api_key` — a user-supplied API key or token, described by `credentials.schema` (§7.5);
@@ -896,7 +908,18 @@ A source whose surface is not a local MCP server (`remote`, or `none`) cannot be
 - `mtls` — mutual TLS client authentication. The user-supplied client certificate and private key (and optional intermediate chain) are described by `credentials.schema` (§7.5); they are injected via `delivery.files` (§7.6) at well-known paths the underlying HTTP client loads. Maps to OpenAPI `mutualTLS` (§7.11);
 - `custom` — credentials acquired by a declarative `connect` flow (§7.7) or supplied directly, described by `credentials.schema` (§7.5).
 
-Every auth method MUST declare `delivery` (§7.6) — where its credential is injected at runtime. An auth method MAY declare `authorized_uris` / `allow_all_uris` (§7.9).
+Every auth method MUST declare `delivery` (§7.6) — where its credential is injected at runtime — unless `source.remote.url` carries its credential (§7.1). An auth method MAY declare `authorized_uris` / `allow_all_uris` (§7.9).
+
+#### Unauthenticated integrations
+
+An integration whose service needs no credential — a public remote MCP server (the [Model Context Protocol authorization model] makes authorization OPTIONAL), or a local MCP server that reaches nothing private — omits `auths`. An empty `auths` object MUST NOT be used: the absence of the field is the only spelling. Such an integration is **unauthenticated**:
+
+- its `source.kind` MUST be `local` or `remote`; a `none` source exposes nothing without an auth method;
+- a consumer acquires and injects no credential for it. When it declares no `variables` (§7.12), it needs no connection: a consumer MUST NOT require the user to create one before an execution. When it declares `variables`, a connection holds only their values;
+- `tools_policy` (§7.8) declares no `required_scopes`, which name auth methods, and `allow_undeclared_tools` requires no wildcard-usable auth method;
+- when a remote server answers with an authorization challenge, the consumer MUST NOT start an authorization the manifest does not declare: it reports the integration unavailable (§6.1).
+
+The egress controls on `source.remote.url` (§8.7) apply to an unauthenticated integration as to any other.
 
 ### 7.3 OAuth2 Configuration and Discovery
 
@@ -987,7 +1010,7 @@ For auth methods of `type` `api_key`, `basic`, `mtls`, or `custom`, and for an `
 
 ### 7.6 Credential Delivery
 
-`delivery` declares where an acquired credential is injected at runtime. At least one of `{http, env, files}` MUST be declared per auth method.
+`delivery` declares where an acquired credential is injected at runtime. At least one of `{http, env, files}` MUST be declared per auth method that declares `delivery`; an auth method whose credential `source.remote.url` carries (§7.1) MAY omit `delivery`.
 
 The block below is a **syntax catalogue** showing all three delivery shapes; it is NOT a valid single `delivery` object. `http` is mutually exclusive with `env`/`files` (see the rule after this block), so a real auth method declares either `http` alone, or any combination of `env` and `files`.
 
@@ -1177,9 +1200,11 @@ When `integration.tools_policy.<name>` is declared, it **augments** the canonica
 
 `integration.allow_undeclared_tools` is an OPTIONAL boolean (default `false`). When `true`, an agent MAY set its `integrations_configuration.<id>.tools` to the wildcard literal `"*"` (§4.4), and the integration MAY declare `default_tools: "*"` (below), which an agent whose `tools` is absent inherits as that wildcard. The runtime then disables the per-tool allowlist filter and passes through every tool the upstream MCP server advertises at run time, including tools the manifest does not enumerate in `tools_policy`.
 
-The integration MUST declare at least one **wildcard-usable** auth, defined as either:
+An integration that declares auth methods MUST declare at least one **wildcard-usable** auth, defined as either:
 - a non-`oauth2` auth (`api_key`, `basic`, `custom`, `mtls`) — these grant access wholesale and carry no scope mechanism, so the wildcard surface is always usable under such an auth; or
 - an `oauth2` auth with a non-empty `default_scopes` (§7.4) — the fallback scope set requested when an agent uses `tools: "*"` under that auth.
+
+An unauthenticated integration (§7.2) has no scope mechanism: the wildcard surface is always usable, and its `tools_policy` declares no `required_scopes`.
 
 When an agent picks an `oauth2` auth (via `integrations_configuration.<id>.auth_key`, or implicitly when only one auth exists) with `tools: "*"`, the agent's scope set is `default_scopes` (still unioned with any explicit `scopes`); when it picks a non-`oauth2` auth, no scopes are required. Consumers MUST reject an agent that requests `tools: "*"` against an integration where `allow_undeclared_tools` is not `true`.
 
@@ -1331,7 +1356,7 @@ AFPS does not define how server code is loaded or executed beyond delegating to 
 Integration packages (§3.5, §7) describe authentication configurations that involve OAuth tokens, API keys, and other secrets:
 
 - consumers MUST store credentials encrypted at rest;
-- consumers MUST NOT include credentials in manifest files, log entries, or error messages;
+- consumers MUST NOT include credentials in manifest files, log entries, or error messages — nor a capability URL (§7.1) rendered with its credential;
 - consumers SHOULD transmit credentials only over TLS-secured connections;
 - `delivery.env` and `delivery.files` entries marked `sensitive` (or carrying secrets) MUST be handled inside the trusted boundary that performs credential decryption;
 - when `delivery.http` is used (proxy injection), the source server MUST NOT receive the secret unless `allow_server_override` permits it;
@@ -1468,6 +1493,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 
 - **[MCP]** Model Context Protocol Specification. https://modelcontextprotocol.io/specification
 - **[Model Context Protocol authorization model]** Model Context Protocol — Authorization. https://modelcontextprotocol.io/specification/draft/basic/authorization
+- **[Capability URLs]** W3C TAG, "Good Practices for Capability URLs", First Public Working Draft, February 2014. https://www.w3.org/TR/capability-urls/
 - **[Client ID Metadata Documents]** OAuth Client ID Metadata Document (CIMD), MCP SEP-991. https://modelcontextprotocol.io/specification/draft/basic/authorization
 - **[Arazzo]** OpenAPI Arazzo Specification (Workflows). https://spec.openapis.org/arazzo/latest.html
 - **[A2A]** Agent-to-Agent Protocol. https://a2a-protocol.org/latest/specification/
@@ -1535,11 +1561,11 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `source.server.version` | integration | string | MUST for `kind=local` | semver range for the referenced `mcp-server` | none |
 | `source.server.vendored` | integration | boolean | MAY | records that the server payload is bundled MCPB-style | `false` |
 | `source.remote` | integration | object | MUST for `kind=remote` | `{ url, transport: streamable-http\|sse }` | none |
-| `source.remote.url` | integration | string | MUST for `kind=remote` | URI of the hosted MCP endpoint, or a URL template (§7.12) | none |
+| `source.remote.url` | integration | string | MUST for `kind=remote` | URI of the hosted MCP endpoint, a URL template (§7.12), or a capability URL with one `{$credential.<field>}` path segment (§7.1) | none |
 | `source.remote.transport` | integration | string | MUST for `kind=remote` | `streamable-http\|sse` | none |
 | `variables` | integration | object | MAY | connection variables (§7.12): `{ schema }` | none |
 | `variables.schema` | integration | object | MUST if `variables` present | self-contained JSON Schema 2020-12; ≥1 property; each a required `string` named per `VARIABLE_NAME_REGEX`; local `$ref` only | none |
-| `auths` | integration | object | MUST | map keyed by `^[a-z][a-z0-9_]*$`; ≥1 entry | none |
+| `auths` | integration | object | MAY (MUST for `kind=none` and for a capability URL) | map keyed by `^[a-z][a-z0-9_]*$`; ≥1 entry when present; absent = unauthenticated (§7.2) | none |
 | `auths.<key>.type` | integration | string | MUST | `oauth2\|api_key\|basic\|mtls\|custom` | none |
 | `auths.<key>.issuer` | integration | string | SHOULD for oauth2 (not required when `source.kind` is `remote` or with `connect.login`) | OAuth/OIDC issuer; enables discovery. For a `remote` source, discovered at connect time from `source.remote.url` (§7.3). MAY be a URL template (§7.12), excluding the endpoints and `resource`; never with `connect.login` (§7.7) | none |
 | `auths.<key>.authorization_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote` or with `connect.login`) | RFC 8414 | none |
@@ -1554,7 +1580,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.identity_claims` | integration | object | MAY | AFPS key → JSONPath (singular query) | none |
 | `auths.<key>.required_identity_claims` | integration | string[] | MAY | required OIDC claims | none |
 | `auths.<key>.credentials.schema` | integration | object | MUST for api_key/basic/mtls/custom, and for oauth2 with `connect.login` | self-contained JSON Schema 2020-12; local `$ref` only | none |
-| `auths.<key>.delivery` | integration | object | MUST | ≥1 of `http`, `env`, `files`; `http` exclusive of `env`/`files` | none |
+| `auths.<key>.delivery` | integration | object | MUST (MAY when `source.remote.url` carries the credential, §7.1) | ≥1 of `http`, `env`, `files`; `http` exclusive of `env`/`files` | none |
 | `auths.<key>.delivery.http` | integration | object | MAY | `{ in, name, prefix?, value, encoding?, allow_server_override? }` | none |
 | `auths.<key>.delivery.http.in` | integration | string | MUST if `http` present | `header\|query\|cookie` (OpenAPI) | none |
 | `auths.<key>.delivery.http.name` | integration | string | MUST if `http` present | header/query/cookie parameter name (OpenAPI) | none |
@@ -1612,6 +1638,7 @@ AUTH_KEY_REGEX       = ^[a-z][a-z0-9_]*$
 META_NAMESPACE_KEY   = ^([a-z0-9-]+(\.[a-z0-9-]+)+\/)?[A-Za-z0-9._-]+$
 VARIABLE_NAME_REGEX  = ^[a-z][a-z0-9_]*$
 URL_TEMPLATE_REGEX   = ^(?:\{\$variable\.[a-z][a-z0-9_]*\}|https:\/\/\{\$variable\.[a-z][a-z0-9_]*\}(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\/?$
+CAPABILITY_URL_REGEX = ^(?:\{\$variable\.[a-z][a-z0-9_]*\}|https:\/\/\{\$variable\.[a-z][a-z0-9_]*\}(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?|https:\/\/(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?)(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\/\{\$credential\.[a-z][a-z0-9_]*\}(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\/?$
 ```
 
 Patterns are ECMA-262 regular expressions, the dialect of JSON Schema `pattern`, and MUST match the whole value. Semantic-version and range validation are delegated to semver parsing functions rather than regexes.

@@ -780,6 +780,206 @@ describe("integration source (§7.1)", () => {
 // §7.2 – §7.5 — Auth methods & credential schema
 // ─────────────────────────────────────────────
 
+/** Zod and the generated JSON Schema agree on an integration manifest. */
+const integrationJsonSchema = new Ajv2020({ strict: false, validateFormats: false }).compile(
+  JSON.parse(readFileSync(join(import.meta.dir, "../v0/integration.schema.json"), "utf8")),
+);
+function expectBoth(valid: boolean, value: unknown) {
+  if (valid) expectValid(integrationManifestSchema, value);
+  else expectInvalid(integrationManifestSchema, value);
+  expect(integrationJsonSchema(value)).toBe(valid);
+}
+
+describe("unauthenticated integration (§7.2)", () => {
+  const publicRemote = {
+    name: "@test/public-docs",
+    version: "1.0.0",
+    type: "integration",
+    schema_version: "0.3",
+    display_name: "Public docs",
+    source: { kind: "remote", remote: { url: "https://docs.example.com/mcp", transport: "streamable-http" } },
+  };
+
+  test("a remote or local source may omit auths", () => {
+    expectValid(integrationManifestSchema, publicRemote);
+    expectValid(integrationManifestSchema, {
+      ...publicRemote,
+      source: { kind: "local", server: { name: "@x/y", version: "^1.0.0" } },
+    });
+  });
+
+  test("an empty auths map is not the unauthenticated spelling", () => {
+    expectInvalid(integrationManifestSchema, { ...publicRemote, auths: {} });
+  });
+
+  test("a none source cannot be unauthenticated", () => {
+    expectInvalid(integrationManifestSchema, { ...publicRemote, source: { kind: "none" } });
+  });
+
+  test("a self-hosted public server keeps its connection variables", () => {
+    expectValid(integrationManifestSchema, {
+      ...publicRemote,
+      source: { kind: "remote", remote: { url: "{$variable.base_url}/mcp", transport: "streamable-http" } },
+      variables: {
+        schema: { type: "object", properties: { base_url: { type: "string" } }, required: ["base_url"] },
+      },
+    });
+  });
+
+  test("allow_undeclared_tools needs no wildcard-usable auth", () => {
+    expectValid(integrationManifestSchema, { ...publicRemote, allow_undeclared_tools: true, default_tools: "*" });
+  });
+
+  test("tools declare no required_scopes: there is no auth method to name (§7.8)", () => {
+    expectBoth(true, { ...publicRemote, tools_policy: { read: {} } });
+    expectBoth(false, { ...publicRemote, tools_policy: { read: { required_scopes: { oauth: ["private:read"] } } } });
+  });
+
+  test("the generated JSON Schema agrees with Zod", () => {
+    expectBoth(true, publicRemote);
+    expectBoth(false, { ...publicRemote, auths: {} });
+    expectBoth(false, { ...publicRemote, source: { kind: "none" } });
+  });
+});
+
+describe("capability URL (§7.1)", () => {
+  const keyAuth = (extra: Record<string, unknown> = {}) => ({
+    type: "api_key",
+    credentials: {
+      schema: { type: "object", properties: { key: { type: "string" } }, required: ["key"] },
+    },
+    ...extra,
+  });
+  const capability = (url: string, auths: Record<string, unknown> | null = { url_key: keyAuth() }) => ({
+    name: "@test/personal-server",
+    version: "1.0.0",
+    type: "integration",
+    schema_version: "0.3",
+    display_name: "Personal server",
+    source: { kind: "remote", remote: { url, transport: "streamable-http" } },
+    ...(auths === null ? {} : { auths }),
+  });
+
+  test("one whole path segment may be a credential; the auth needs no delivery", () => {
+    expectValid(integrationManifestSchema, capability("https://mcp.example.com/{$credential.key}/mcp"));
+    expectValid(integrationManifestSchema, capability("https://mcp.example.com:8443/s/{$credential.key}"));
+  });
+
+  test("a capability URL may also be a URL template (§7.12)", () => {
+    expectValid(integrationManifestSchema, {
+      ...capability("{$variable.base_url}/{$credential.key}/mcp"),
+      variables: {
+        schema: { type: "object", properties: { base_url: { type: "string" } }, required: ["base_url"] },
+      },
+    });
+  });
+
+  test("an auth may still deliver the same credential over http", () => {
+    expectValid(
+      integrationManifestSchema,
+      capability("https://mcp.example.com/{$credential.key}/mcp", {
+        url_key: keyAuth({
+          delivery: { http: { in: "header", name: "X-Key", value: "{$credential.key}" } },
+          authorized_uris: ["https://mcp.example.com/**"],
+        }),
+      }),
+    );
+  });
+
+  test("the credential never fills the authority, a query, a partial segment, or two segments", () => {
+    for (const url of [
+      "https://{$credential.key}.example.com/mcp",
+      "https://mcp.example.com/mcp?key={$credential.key}",
+      "https://mcp.example.com/mcp#{$credential.key}",
+      "https://mcp.example.com/k-{$credential.key}/mcp",
+      "https://mcp.example.com/{$credential.key}/{$credential.key}",
+      "{$credential.key}/mcp",
+    ]) {
+      expectInvalid(integrationManifestSchema, capability(url));
+    }
+  });
+
+  test("a capability URL is https", () => {
+    expectInvalid(integrationManifestSchema, capability("http://mcp.example.com/{$credential.key}/mcp"));
+  });
+
+  test("the URL's credential needs a declared auth supplying it", () => {
+    expectInvalid(integrationManifestSchema, capability("https://mcp.example.com/{$credential.key}/mcp", null));
+  });
+
+  test("every auth method lists the field as a required string", () => {
+    const url = "https://mcp.example.com/{$credential.key}/mcp";
+    expectInvalid(
+      integrationManifestSchema,
+      capability(url, {
+        url_key: {
+          ...keyAuth(),
+          credentials: { schema: { type: "object", properties: { key: { type: "string" } } } },
+        },
+      }),
+    );
+    expectInvalid(
+      integrationManifestSchema,
+      capability(url, {
+        url_key: {
+          ...keyAuth(),
+          credentials: { schema: { type: "object", properties: { key: { type: "number" } }, required: ["key"] } },
+        },
+      }),
+    );
+    expectInvalid(
+      integrationManifestSchema,
+      capability(url, {
+        url_key: keyAuth(),
+        other: {
+          type: "api_key",
+          credentials: { schema: { type: "object", properties: { token: { type: "string" } }, required: ["token"] } },
+          delivery: { http: { in: "header", name: "Authorization", value: "{$credential.token}" } },
+        },
+      }),
+    );
+  });
+
+  test("a literal port is 1 to 65535 and the filled URL parses", () => {
+    expectBoth(true, capability("https://mcp.example.com:65535/{$credential.key}"));
+    for (const port of ["99999", "65536", "0", "08443"]) {
+      expectBoth(false, capability(`https://mcp.example.com:${port}/{$credential.key}`));
+    }
+  });
+
+  test("the generated JSON Schema agrees with Zod", () => {
+    const url = "https://mcp.example.com/{$credential.key}/mcp";
+    const bearer = { http: { in: "header", name: "Authorization", value: "{$credential.key}" } };
+    expectBoth(true, capability(url));
+    expectBoth(false, capability(url, null));
+    expectBoth(false, capability(url, { oauth: { ...keyAuth(), type: "oauth2", delivery: bearer } }));
+    expectBoth(false, capability(url, { flow: { ...keyAuth(), type: "custom", connect: { tool: { name: "get_token" } } } }));
+    // Outside a capability URL, every auth method still declares a delivery.
+    expectBoth(false, capability("https://mcp.example.com/mcp"));
+    expectBoth(true, capability("https://mcp.example.com/mcp", { url_key: keyAuth({ delivery: bearer }) }));
+  });
+
+  test("CAPABILITY_URL_REGEX is exported from the package entry", async () => {
+    const entry = await import("@afps-spec/schema");
+    expect(entry.CAPABILITY_URL_REGEX.test("https://mcp.example.com/{$credential.key}/mcp")).toBe(true);
+  });
+
+  test("an issued credential cannot sit in the URL", () => {
+    const url = "https://mcp.example.com/{$credential.access_token}/mcp";
+    expectInvalid(
+      integrationManifestSchema,
+      capability(url, {
+        oauth: {
+          type: "oauth2",
+          credentials: {
+            schema: { type: "object", properties: { access_token: { type: "string" } }, required: ["access_token"] },
+          },
+        },
+      }),
+    );
+  });
+});
+
 describe("integration auth methods (§7.2 – §7.5)", () => {
   const base = {
     name: "@test/integration",
@@ -794,11 +994,26 @@ describe("integration auth methods (§7.2 – §7.5)", () => {
     return { ...base, auths };
   }
 
-  test("auths must have at least one entry", () => {
+  test("auths, when present, must have at least one entry (§7.2)", () => {
     expectInvalid(integrationManifestSchema, withAuth({}));
+  });
+
+  test("a none source needs an auth method (§7.2)", () => {
     const noAuths = { ...base };
     delete (noAuths as Record<string, unknown>).auths;
     expectInvalid(integrationManifestSchema, noAuths);
+  });
+
+  test("delivery is required outside a capability URL (§7.6)", () => {
+    expectInvalid(
+      integrationManifestSchema,
+      withAuth({
+        key: {
+          type: "api_key",
+          credentials: { schema: { type: "object", properties: { k: { type: "string" } }, required: ["k"] } },
+        },
+      }),
+    );
   });
 
   test("auth key must match ^[a-z][a-z0-9_]*$", () => {

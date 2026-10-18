@@ -291,6 +291,10 @@
                     {
                       "type": "string",
                       "pattern": "^(?:\\{\\$variable\\.[a-z][a-z0-9_]*\\}|https:\\/\\/\\{\\$variable\\.[a-z][a-z0-9_]*\\}(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\\/?$"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^(?:\\{\\$variable\\.[a-z][a-z0-9_]*\\}|https:\\/\\/\\{\\$variable\\.[a-z][a-z0-9_]*\\}(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?|https:\\/\\/(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)*[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?)(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\\/\\{\\$credential\\.[a-z][a-z0-9_]*\\}(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\\/?$"
                     }
                   ]
                 },
@@ -927,8 +931,7 @@
           }
         },
         "required": [
-          "type",
-          "delivery"
+          "type"
         ],
         "additionalProperties": {},
         "allOf": [
@@ -1260,8 +1263,7 @@
     "name",
     "version",
     "type",
-    "source",
-    "auths"
+    "source"
   ],
   "additionalProperties": {},
   "allOf": [
@@ -1338,7 +1340,7 @@
               "remote": {
                 "properties": {
                   "url": {
-                    "pattern": "\\{\\$"
+                    "pattern": "\\{\\$variable\\."
                   }
                 },
                 "required": [
@@ -1439,6 +1441,102 @@
                   "connect"
                 ]
               }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "auths"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "local",
+                  "remote"
+                ]
+              }
+            }
+          },
+          "tools_policy": {
+            "additionalProperties": {
+              "not": {
+                "required": [
+                  "required_scopes"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": {
+              "kind": {
+                "const": "remote"
+              },
+              "remote": {
+                "properties": {
+                  "url": {
+                    "pattern": "\\{\\$credential\\."
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "remote"
+            ]
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "then": {
+        "required": [
+          "auths"
+        ],
+        "properties": {
+          "auths": {
+            "additionalProperties": {
+              "properties": {
+                "type": {
+                  "not": {
+                    "const": "oauth2"
+                  }
+                }
+              },
+              "not": {
+                "required": [
+                  "connect"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "auths": {
+            "additionalProperties": {
+              "required": [
+                "delivery"
+              ]
             }
           }
         }
