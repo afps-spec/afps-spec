@@ -1,8 +1,24 @@
 # Changelog
 
-## Unreleased — draft
+## Schema `@afps-spec/schema@0.11.0` — 2026-10-18
 
-Normative change to the 0.3 draft (no spec-version bump). Draft for review.
+Validates the §7.1 / §7.2 revision below. A manifest that validated under
+0.10.0 still validates unless its `source.remote.url` carried a
+`{$credential.<field>}` placeholder that is not a whole path segment, or that
+the auth methods do not declare as a required user-supplied string. Minor bump
+only: `0.x` makes no back-compat promise.
+
+- `auths` is optional (unauthenticated integration); an empty object stays
+  rejected, as do `auths` absent under a `none` source and `required_scopes`
+  without `auths`.
+- `source.remote.url` accepts a capability URL (`CAPABILITY_URL_REGEX`,
+  exported from the package entry); `auths.<key>.delivery` is optional only
+  for the auth method whose credential the URL carries.
+
+## Spec 0.3 revision — 2026-10-18 (unauthenticated integrations, capability URLs)
+
+Normative change to the 0.3 draft (no spec-version bump). Validate with
+`@afps-spec/schema` 0.11.0.
 
 ### Added
 
