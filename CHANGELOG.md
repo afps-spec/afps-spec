@@ -27,11 +27,19 @@ Normative change to the 0.3 draft (no spec-version bump). Draft for review.
   The rendered URL is a credential (§8.3): stored encrypted, never in a
   manifest, log, error, or anything exposed to an agent, and sent only to
   the rendered `source.remote.url`.
+- §7.8: `allow_undeclared_tools` needs a wildcard-usable auth only when the
+  integration declares auth methods; an unauthenticated integration declares
+  no `required_scopes`.
 
 ### Changed
 
-- `@afps-spec/schema`: `auths` and `auths.<key>.delivery` are optional in the
-  generated JSON Schema; the Zod schema enforces the cross-field rules above.
+- `@afps-spec/schema`: `auths` and `auths.<key>.delivery` are optional
+  properties; conditional rules in the generated JSON Schema restore what Zod
+  enforces (a `none` source and a capability URL need `auths`; a capability
+  URL admits no `oauth2` and no `connect`; `delivery` is required outside a
+  capability URL; an unauthenticated integration declares no
+  `required_scopes`). `CAPABILITY_URL_REGEX` is exported from the package
+  entry.
 - New examples `integration-public-remote` and `integration-capability-url`.
 
 ## Spec 0.3 revision — 2026-10-18

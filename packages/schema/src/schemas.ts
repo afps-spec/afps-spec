@@ -55,6 +55,8 @@ export const URL_TEMPLATE_REGEX = new RegExp(
   `^(?:${VARIABLE_PLACEHOLDER}|https:\\/\\/${VARIABLE_PLACEHOLDER}(?:\\.${LABEL})*\\.${LAST_LABEL})(?:\\/${SEGMENT})*\\/?$`,
 );
 
+/** A TCP port, 1 to 65535, without leading zeros. */
+const PORT = "(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])";
 const CREDENTIAL_PLACEHOLDER = `\\{\\$credential\\.${IDENTIFIER_PATTERN}\\}`;
 /** One `{$credential.<field>}` placeholder; group 1 is the field. */
 const CREDENTIAL_REF = new RegExp(`\\{\\$credential\\.(${IDENTIFIER_PATTERN})\\}`, "g");
@@ -67,7 +69,7 @@ const CREDENTIAL_REF = new RegExp(`\\{\\$credential\\.(${IDENTIFIER_PATTERN})\\}
  * or a fragment.
  */
 export const CAPABILITY_URL_REGEX = new RegExp(
-  `^(?:${VARIABLE_PLACEHOLDER}|https:\\/\\/${VARIABLE_PLACEHOLDER}(?:\\.${LABEL})*\\.${LAST_LABEL}|https:\\/\\/(?:${LABEL}\\.)*${LAST_LABEL}(?::[0-9]{1,5})?)(?:\\/${SEGMENT})*\\/${CREDENTIAL_PLACEHOLDER}(?:\\/${SEGMENT})*\\/?$`,
+  `^(?:${VARIABLE_PLACEHOLDER}|https:\\/\\/${VARIABLE_PLACEHOLDER}(?:\\.${LABEL})*\\.${LAST_LABEL}|https:\\/\\/(?:${LABEL}\\.)*${LAST_LABEL}(?::${PORT})?)(?:\\/${SEGMENT})*\\/${CREDENTIAL_PLACEHOLDER}(?:\\/${SEGMENT})*\\/?$`,
 );
 
 /** Octal file-mode string, e.g. "0400" (§7.6). */
@@ -93,9 +95,15 @@ const urlOrVariableTemplate = z.union([
  */
 const remoteUrl = z.union([
   ...urlOrVariableTemplate.options,
-  z.string().regex(CAPABILITY_URL_REGEX, {
-    error: "Must be a URL, a URL template, or a capability URL whose path has one whole {$credential.<field>} segment",
-  }),
+  z
+    .string()
+    .regex(CAPABILITY_URL_REGEX, {
+      error: "Must be a URL, a URL template, or a capability URL whose path has one whole {$credential.<field>} segment",
+    })
+    // A literal origin must parse once the credential segment is filled.
+    .refine((value) => value.includes("{$variable.") || URL.canParse(value.replace(CREDENTIAL_REF, "x")), {
+      error: "Must be a valid URL once its {$credential.<field>} segment is filled",
+    }),
 ]);
 /** A URL-valued field that is never templated (§7.3). */
 const literalUrl = z.url().refine(notTemplated, { error: "Must not be templated; only issuer is (§7.3)" });
@@ -1259,6 +1267,19 @@ export function createSchemas(majorVersion: number) {
         });
       }
       const auths = declared ?? {};
+      // §7.2, §7.8 — required_scopes name auth methods: none without any.
+      if (declared === undefined) {
+        const policy = (val.tools_policy ?? {}) as Record<string, { required_scopes?: unknown } | undefined>;
+        for (const [tool, entry] of Object.entries(policy)) {
+          if (entry?.required_scopes !== undefined) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["tools_policy", tool, "required_scopes"],
+              message: "an unauthenticated integration declares no required_scopes",
+            });
+          }
+        }
+      }
       // §7.1 — a capability URL carries one credential field, so it needs a
       // method supplying it.
       const remoteUrlValue = sourceKind === "remote" ? source?.remote?.url : undefined;

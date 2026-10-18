@@ -43,7 +43,7 @@ const isCheck = process.argv.includes("--check");
  */
 function applyCrossFieldRules(filename: string, schema: Record<string, any>): void {
   if (filename === "integration.schema.json") {
-    // §3.5 — at least one auth method.
+    // §3.5, §7.2 — `auths`, when present, names at least one auth method.
     schema.properties.auths.minProperties = 1;
 
     // §7.12 — the literal branch of `source.remote.url` and `issuer` excludes `{$`, so a
@@ -201,16 +201,17 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
         },
       },
     ];
-    // §7.3 — a templated `source.remote.url` leaves every oauth2 auth's endpoints
-    // and `resource` to remote MCP authorization; an issuer is then a template
-    // (over the URL's variables: Zod only).
+    // §7.3 — a variable-templated `source.remote.url` leaves every oauth2 auth's
+    // endpoints and `resource` to remote MCP authorization; an issuer is then a
+    // template (over the URL's variables: Zod only). A capability URL's
+    // credential segment (§7.1) chooses no upstream.
     schema.allOf.push({
       if: {
         properties: {
           source: {
             properties: {
               kind: { const: "remote" },
-              remote: { properties: { url: { pattern: "\\{\\$" } }, required: ["url"] },
+              remote: { properties: { url: { pattern: "\\{\\$variable\\." } }, required: ["url"] },
             },
             required: ["kind", "remote"],
           },
@@ -247,6 +248,49 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
           },
         },
       },
+    });
+
+    // §7.2 — an unauthenticated integration (no `auths`) has a `local` or
+    // `remote` source, and its tools declare no `required_scopes`.
+    schema.allOf.push({
+      if: { not: { required: ["auths"] } },
+      then: {
+        properties: {
+          source: { properties: { kind: { enum: ["local", "remote"] } } },
+          tools_policy: { additionalProperties: { not: { required: ["required_scopes"] } } },
+        },
+      },
+    });
+
+    // §7.1 — a capability URL needs `auths`, every method user-supplied (no
+    // oauth2, no `connect`; the field being a required string of its
+    // credentials.schema is Zod only), `delivery` then optional. §7.6 —
+    // otherwise every auth method declares `delivery`.
+    schema.allOf.push({
+      if: {
+        properties: {
+          source: {
+            properties: {
+              kind: { const: "remote" },
+              remote: { properties: { url: { pattern: "\\{\\$credential\\." } }, required: ["url"] },
+            },
+            required: ["kind", "remote"],
+          },
+        },
+        required: ["source"],
+      },
+      then: {
+        required: ["auths"],
+        properties: {
+          auths: {
+            additionalProperties: {
+              properties: { type: { not: { const: "oauth2" } } },
+              not: { required: ["connect"] },
+            },
+          },
+        },
+      },
+      else: { properties: { auths: { additionalProperties: { required: ["delivery"] } } } },
     });
 
     // §7.6 — ≥1 delivery channel; http exclusive of env/files.

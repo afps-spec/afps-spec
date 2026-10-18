@@ -780,6 +780,16 @@ describe("integration source (§7.1)", () => {
 // §7.2 – §7.5 — Auth methods & credential schema
 // ─────────────────────────────────────────────
 
+/** Zod and the generated JSON Schema agree on an integration manifest. */
+const integrationJsonSchema = new Ajv2020({ strict: false, validateFormats: false }).compile(
+  JSON.parse(readFileSync(join(import.meta.dir, "../v0/integration.schema.json"), "utf8")),
+);
+function expectBoth(valid: boolean, value: unknown) {
+  if (valid) expectValid(integrationManifestSchema, value);
+  else expectInvalid(integrationManifestSchema, value);
+  expect(integrationJsonSchema(value)).toBe(valid);
+}
+
 describe("unauthenticated integration (§7.2)", () => {
   const publicRemote = {
     name: "@test/public-docs",
@@ -818,6 +828,17 @@ describe("unauthenticated integration (§7.2)", () => {
 
   test("allow_undeclared_tools needs no wildcard-usable auth", () => {
     expectValid(integrationManifestSchema, { ...publicRemote, allow_undeclared_tools: true, default_tools: "*" });
+  });
+
+  test("tools declare no required_scopes: there is no auth method to name (§7.8)", () => {
+    expectBoth(true, { ...publicRemote, tools_policy: { read: {} } });
+    expectBoth(false, { ...publicRemote, tools_policy: { read: { required_scopes: { oauth: ["private:read"] } } } });
+  });
+
+  test("the generated JSON Schema agrees with Zod", () => {
+    expectBoth(true, publicRemote);
+    expectBoth(false, { ...publicRemote, auths: {} });
+    expectBoth(false, { ...publicRemote, source: { kind: "none" } });
   });
 });
 
@@ -917,6 +938,30 @@ describe("capability URL (§7.1)", () => {
         },
       }),
     );
+  });
+
+  test("a literal port is 1 to 65535 and the filled URL parses", () => {
+    expectBoth(true, capability("https://mcp.example.com:65535/{$credential.key}"));
+    for (const port of ["99999", "65536", "0", "08443"]) {
+      expectBoth(false, capability(`https://mcp.example.com:${port}/{$credential.key}`));
+    }
+  });
+
+  test("the generated JSON Schema agrees with Zod", () => {
+    const url = "https://mcp.example.com/{$credential.key}/mcp";
+    const bearer = { http: { in: "header", name: "Authorization", value: "{$credential.key}" } };
+    expectBoth(true, capability(url));
+    expectBoth(false, capability(url, null));
+    expectBoth(false, capability(url, { oauth: { ...keyAuth(), type: "oauth2", delivery: bearer } }));
+    expectBoth(false, capability(url, { flow: { ...keyAuth(), type: "custom", connect: { tool: { name: "get_token" } } } }));
+    // Outside a capability URL, every auth method still declares a delivery.
+    expectBoth(false, capability("https://mcp.example.com/mcp"));
+    expectBoth(true, capability("https://mcp.example.com/mcp", { url_key: keyAuth({ delivery: bearer }) }));
+  });
+
+  test("CAPABILITY_URL_REGEX is exported from the package entry", async () => {
+    const entry = await import("@afps-spec/schema");
+    expect(entry.CAPABILITY_URL_REGEX.test("https://mcp.example.com/{$credential.key}/mcp")).toBe(true);
   });
 
   test("an issued credential cannot sit in the URL", () => {
