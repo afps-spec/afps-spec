@@ -882,7 +882,17 @@ describe("no credential in source.remote.url (§7.1)", () => {
 
   test("a credential segment stays invalid inside a URL template (§7.12)", () => {
     expectBoth(false, remote("{$variable.base_url}/{$credential.key}/mcp", baseUrlVariable));
+  });
+
+  test("a {$variable.<name>} template stays valid under Zod and JSON Schema (§7.12)", () => {
     expectBoth(true, remote("{$variable.base_url}/mcp", baseUrlVariable));
+    expectBoth(true, remote("{$variable.base_url}/api/v4/mcp", baseUrlVariable));
+    expectBoth(true, {
+      ...remote("https://{$variable.tenant}.example.com/mcp"),
+      variables: {
+        schema: { type: "object", properties: { tenant: { type: "string" } }, required: ["tenant"] },
+      },
+    });
   });
 
   test("an unauthenticated integration cannot carry one either", () => {
