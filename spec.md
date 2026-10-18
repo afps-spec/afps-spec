@@ -890,7 +890,7 @@ A source whose surface is not a local MCP server (`remote`, or `none`) cannot be
 
 `auths` is a map of one or more named authentication methods. The key matches `^[a-z][a-z0-9_]*$` and disambiguates methods when a manifest declares more than one. Each value is an object whose `type` selects the authentication model:
 
-- `oauth2` — OAuth 2.0 / OpenID Connect (§7.3);
+- `oauth2` — OAuth 2.0 / OpenID Connect (§7.3), its first token acquired through the authorization-code flow or, when it declares `connect.login`, by a token request (§7.7);
 - `api_key` — a user-supplied API key or token, described by `credentials.schema` (§7.5);
 - `basic` — HTTP Basic credentials, described by `credentials.schema` (§7.5);
 - `mtls` — mutual TLS client authentication. The user-supplied client certificate and private key (and optional intermediate chain) are described by `credentials.schema` (§7.5); they are injected via `delivery.files` (§7.6) at well-known paths the underlying HTTP client loads. Maps to OpenAPI `mutualTLS` (§7.11);
@@ -905,7 +905,7 @@ For an auth method of `type: "oauth2"`, the endpoint set is resolved **discovery
 #### `issuer`
 - **Type**: string (URI)
 - **Required**: SHOULD (REQUIRED to enable discovery)
-- **Description**: The OAuth 2.0 / OIDC issuer identifier. Consumers use it to locate the authorization server metadata document. When `issuer` is absent, the manual endpoint fields below are REQUIRED — **except** when the integration's `source.kind` is `remote` (§7.1), in which case both `issuer` and the manual endpoints MAY be omitted and are resolved at connect time from `source.remote.url` (see *Remote MCP authorization* below).
+- **Description**: The OAuth 2.0 / OIDC issuer identifier. Consumers use it to locate the authorization server metadata document. When `issuer` is absent, the manual endpoint fields below are REQUIRED — **except** when the integration's `source.kind` is `remote` (§7.1), in which case both `issuer` and the manual endpoints MAY be omitted and are resolved at connect time from `source.remote.url` (see *Remote MCP authorization* below), and when the auth method declares `connect.login` (§7.7), which requires `token_endpoint` alone, whether `issuer` is present or not.
 
 An auth method's authorization server is **chosen per connection** — for a self-hosted instance — in two cases, and **fixed** otherwise:
 
@@ -918,8 +918,8 @@ No other field of an auth method is templated: an endpoint the user could choose
 
 These fields use the snake_case field names defined by [RFC 8414] and [OpenID Connect Discovery] so that a value may be copied directly from a discovery document. Any field a consumer obtains from discovery MUST be overridable by an explicit manifest value, except where *Client binding* (below) forbids presenting client credentials to it.
 
-- `authorization_endpoint` (string, URI) — REQUIRED when discovery is unavailable. [RFC 8414]
-- `token_endpoint` (string, URI) — REQUIRED when discovery is unavailable. [RFC 8414]
+- `authorization_endpoint` (string, URI) — REQUIRED when discovery is unavailable, unless the auth method declares `connect.login` (§7.7). [RFC 8414]
+- `token_endpoint` (string, URI) — REQUIRED when discovery is unavailable, and on an auth method that declares `connect.login` (§7.7). [RFC 8414]
 - `userinfo_endpoint` (string, URI) — OPTIONAL. [OpenID Connect Discovery]
 - `token_endpoint_auth_method` (string) — OPTIONAL. One of the values defined by [RFC 7591] / [OpenID Connect Core]: `client_secret_basic` (default per [RFC 8414] §2 / [RFC 7591] §2), `client_secret_post`, `client_secret_jwt`, `private_key_jwt`, `tls_client_auth`, `self_signed_tls_client_auth`, or `none`.
 - `code_challenge_methods_supported` (array of strings) — OPTIONAL; PKCE methods, e.g. `["S256"]`. [RFC 8414] / [RFC 7636]. A consumer SHOULD use `S256` when supported. When a provider supports PKCE but does not advertise it, a manifest MAY supply `["S256"]` as a manual override.
@@ -980,7 +980,7 @@ OAuth scopes are declared in two AFPS fields, distinct from the non-authoritativ
 
 ### 7.5 Credential Schema
 
-For auth methods of `type` `api_key`, `basic`, `mtls`, or `custom`, `credentials.schema` is REQUIRED. It declares the shape of the user-supplied credential bag. For `mtls`, the schema SHOULD describe the client certificate (PEM), the private key (PEM), and an optional intermediate chain.
+For auth methods of `type` `api_key`, `basic`, `mtls`, or `custom`, and for an `oauth2` auth method that declares `connect.login` (§7.7), `credentials.schema` is REQUIRED. It declares the shape of the user-supplied credential bag — for such an `oauth2` auth method, the fields the user submits to its token request. For `mtls`, the schema SHOULD describe the client certificate (PEM), the private key (PEM), and an optional intermediate chain.
 
 - `credentials.schema` MUST be a self-contained JSON Schema 2020-12 document (the dialect adopted by §5). Each property defines a credential field the user must supply.
 - Any `$ref` inside `credentials.schema` MUST be a local fragment-only pointer (`#/...`). External or remote `$ref` MUST NOT be used. This keeps credential schemas offline-validatable and prevents schema-fetch SSRF (§8.7).
@@ -1030,11 +1030,11 @@ The block below is a **syntax catalogue** showing all three delivery shapes; it 
 
 No specification standardizes runtime secret injection into environment variables and files; the `env`/`files` vocabulary borrows Kubernetes naming (`mode`, mount-style paths) and is an AFPS contribution.
 
-Value templates reference the connection's credential fields as `{$credential.<field>}` and its connection variables (§7.12) as `{$variable.<name>}`; no other expression is rendered, and a consumer MUST reject a template carrying one. For an auth method with `connect` (§7.7), the credential fields are its declared outputs: output `<name>` is `{$credential.<name>}`. A credential field holds any [JSON] value (§7.5): a string is substituted as it is, any other value as its [JSON] text (`5432` renders `5432`, `true` renders `true`, `["a","b"]` renders `["a","b"]`), and a `null` value is an absent field. This rule applies to every `{$credential.<field>}` reference, in a value template as in an `authorized_uris` entry (§7.9).
+Value templates reference the connection's credential fields as `{$credential.<field>}` and its connection variables (§7.12) as `{$variable.<name>}`; no other expression is rendered, and a consumer MUST reject a template carrying one. For a `custom` auth method with `connect` (§7.7), the credential fields are its declared outputs: output `<name>` is `{$credential.<name>}`. A credential field holds any [JSON] value (§7.5): a string is substituted as it is, any other value as its [JSON] text (`5432` renders `5432`, `true` renders `true`, `["a","b"]` renders `["a","b"]`), and a `null` value is an absent field. This rule applies to every `{$credential.<field>}` reference, in a value template as in an `authorized_uris` entry (§7.9).
 
 ### 7.7 Declarative Credential Acquisition (connect)
 
-`connect` declares how a `custom` auth method acquires its credential without OAuth. It is valid only for `type: "custom"`. A `connect` object MUST contain exactly one of:
+`connect` declares how an auth method acquires its credential through a declarative flow. It is valid for `type: "custom"`, whose credential it acquires without OAuth, and its `login` mode is also valid for `type: "oauth2"`, whose first token it acquires by a token request (*On an `oauth2` auth method*, below). `connect.tool` is valid only for `type: "custom"`. A `connect` object MUST contain exactly one of:
 
 - `login` — a declarative HTTP login flow (specified below); or
 - `tool` — an orchestrated acquisition driven by a tool. This mode is OPTIONAL and experimental: its field shapes are specified, but its security properties are left to the implementation.
@@ -1100,9 +1100,50 @@ Value templates reference the connection's credential fields as `{$credential.<f
 
 A consumer that does not support a Criterion or Selector Object form a manifest declares, `xpath` included, MUST report it no later than when the manifest is installed or saved, and MUST NOT send a login request for it. A manifest meant for every consumer stays within this profile: one `simple` Criterion per comparison (all Criteria must be met), `success_criteria` omitted to require HTTP 2xx, and `regex` or `jsonpath` for any check an equality cannot express.
 
-**Gating rule.** A `delivery.*` value template MAY only reference declared `connect` outputs, as `{$credential.<output>}` (or, for the orchestrated `tool` mode, its declared `produces`), and connection variables as `{$variable.<name>}`, within the limits §7.12 sets for an issued credential. A delivery referencing anything else — for example a bootstrap login secret — is a manifest error.
+**Gating rule.** A `delivery.*` value template of a `custom` auth method that declares `connect` MAY only reference declared `connect` outputs, as `{$credential.<output>}` (or, for the orchestrated `tool` mode, its declared `produces`), and connection variables as `{$variable.<name>}`, within the limits §7.12 sets for an issued credential. A delivery referencing anything else — for example a bootstrap login secret — is a manifest error.
 
 A value template embeds a credential field as `{$credential.<field>}` (for example `{$credential.token}`); the `connect.login` fields that name a part of the response (`context`, `source`, string outputs, criteria) are bare Arazzo runtime expressions. The runtime-expression grammar is adopted from [Arazzo]; the extractor objects (`from: jwt|regex|cookie`) are AFPS extensions.
+
+#### On an `oauth2` auth method
+
+An `oauth2` auth method MAY declare `connect.login` to acquire its first token by a token request to its token endpoint instead of through the authorization-code flow: the user obtains a grant outside the consumer — for example a refresh token — and submits it, and nothing is redirected. Such an auth method:
+
+- MUST declare `token_endpoint` (§7.3) and `credentials.schema` (§7.5), whose properties are the fields the user submits; it requires neither `authorization_endpoint` nor `issuer`;
+- MUST NOT declare an `issuer` that is a URL template (§7.12), MUST NOT declare `scope_catalog` (§7.4), and MUST NOT be declared by an integration whose `source.kind` is `remote` (§7.1).
+
+`connect.login.request` describes only the grant parameters of an [RFC 6749] token request:
+
+- `method` MUST be `POST`; `url` MUST equal the auth method's `token_endpoint` by simple string comparison, and neither of them carries a placeholder; `content_type` MUST be `application/x-www-form-urlencoded`; `headers` MUST NOT be declared;
+- `body` MUST be declared and holds the grant parameters: `grant_type` and the parameters of that grant, with `{{<name>}}` placeholders replaced by `credentials.schema` fields and encoded as in any `application/x-www-form-urlencoded` body (above). A placeholder MUST NOT stand for a parameter name. The body MUST NOT carry `client_id`, `client_secret`, `client_assertion`, `client_assertion_type` or `resource`.
+
+The consumer completes the request as it does a refresh request. It authenticates its client per `token_endpoint_auth_method` ([RFC 6749] §2.3, [RFC 7591] §2) — an HTTP Basic `Authorization` header for `client_secret_basic`, `client_id` and `client_secret` in the body for `client_secret_post`, `client_id` alone in the body for a public client (`none`), and the corresponding parameters or TLS client authentication for the other methods — with the client the connection is bound to, which is the client that later refreshes it; and it adds the [RFC 8707] `resource` parameter when it sends one (§7.3). A consumer MUST NOT send the request when *Client binding* (§7.3) forbids presenting that client to `token_endpoint`.
+
+`outputs`, `success_criteria`, `expires_in_output` and `identity_outputs` MUST NOT be declared: the response is processed as an [RFC 6749] §5.1 successful token response — `access_token` REQUIRED; `refresh_token`, `expires_in`, `scope`, `token_type` and `id_token` OPTIONAL — or an [RFC 6749] §5.2 error response. A consumer MUST NOT store a connection when the response is not a successful token response. When a successful response omits `refresh_token` and the submitted credentials hold a `refresh_token` field, that value remains the connection's refresh token ([RFC 6749] §6). The connection's identity is resolved per §7.4 as for the authorization-code flow: `identity_claims` evaluated over the token response, the claims of an `id_token`, and the `userinfo_endpoint` response.
+
+Once acquired, the connection is an ordinary `oauth2` connection: its expiry, its refresh ([RFC 6749] §6) and the rotation of its refresh token follow the rules of any `oauth2` auth method.
+
+```json
+"oauth": {
+  "type": "oauth2",
+  "token_endpoint": "https://idp.example.com/oauth/token",
+  "token_endpoint_auth_method": "none",
+  "credentials": {
+    "schema": {
+      "type": "object",
+      "properties": { "refresh_token": { "type": "string", "title": "Refresh token" } },
+      "required": ["refresh_token"]
+    }
+  },
+  "connect": { "login": { "request": {
+    "method": "POST",
+    "url": "https://idp.example.com/oauth/token",
+    "content_type": "application/x-www-form-urlencoded",
+    "body": "grant_type=refresh_token&refresh_token={{refresh_token}}"
+  } } },
+  "delivery": { "http": { "in": "header", "name": "Authorization", "prefix": "Bearer ", "value": "{$credential.access_token}" } },
+  "authorized_uris": ["https://api.example.com/**"]
+}
+```
 
 ### 7.8 Per-Tool Policy
 
@@ -1178,7 +1219,7 @@ An `authorized_uris` entry MAY reference the connection's own credential fields 
 - **Authority form** — the entry starts with `scheme://` and every placeholder lies in the authority (before the first `/`, `?`, or `#` that follows `://`), e.g. `https://{$credential.host}/**` or `ssh://{$credential.host}:{$credential.port}`.
 - **URL form** — the entry starts with exactly one placeholder, followed either by nothing (the *bare* form, e.g. `{$credential.webhook_url}`) or by a suffix that begins with `/` and contains no placeholder, e.g. `{$credential.base_url}/v1/**`.
 
-Every `{$credential.<field>}` reference MUST name a property of `credentials.schema` (§7.5) listed in its `required`, and an entry carrying one MUST NOT appear on an auth method of `type: "oauth2"` or on one that declares `connect` (§7.7), whose credential is not user-supplied. Every `{$variable.<name>}` reference MUST name a declared connection variable (§7.12). An entry carrying one MUST take the URL form, or the authority form with a single placeholder filling the host, alone or followed by literal labels (`https://{$variable.tenant}.example.com/**`). On an `oauth2` auth method, or one that declares `connect`, the credential is issued for an upstream: for an `oauth2` auth method, `source.remote.url` (§7.1) when the source is `remote` — the resource its tokens are for — and its `issuer` (§7.3) otherwise; for a `connect.tool`, `source.remote.url`; for a `connect.login`, its request URL (§7.7), which carries no `{$variable.<name>}` and is therefore always fixed. When that upstream is a URL template, every entry of the auth method MUST carry a variable and share the template's origin — the same leading placeholder in the URL form; in the authority form, the same scheme and host as a host-form template, and no port — so that the credential reaches only the origin it was issued for. When the upstream is fixed, no entry carries a variable. A consumer that implements credential templates MUST reject a manifest that violates these rules; one that does not MUST treat every templated entry as matching no URI.
+Every `{$credential.<field>}` reference MUST name a property of `credentials.schema` (§7.5) listed in its `required`, and an entry carrying one MUST NOT appear on an auth method of `type: "oauth2"` or on one that declares `connect` (§7.7), whose credential is not user-supplied. Every `{$variable.<name>}` reference MUST name a declared connection variable (§7.12). An entry carrying one MUST take the URL form, or the authority form with a single placeholder filling the host, alone or followed by literal labels (`https://{$variable.tenant}.example.com/**`). On an `oauth2` auth method, or one that declares `connect`, the credential is issued for an upstream: for an `oauth2` auth method, `source.remote.url` (§7.1) when the source is `remote` — the resource its tokens are for — and its `issuer` (§7.3) otherwise; for a `connect.tool`, `source.remote.url`; for the `connect.login` of a `custom` auth method, its request URL (§7.7), which carries no `{$variable.<name>}` and is therefore always fixed. When that upstream is a URL template, every entry of the auth method MUST carry a variable and share the template's origin — the same leading placeholder in the URL form; in the authority form, the same scheme and host as a host-form template, and no port — so that the credential reaches only the origin it was issued for. When the upstream is fixed, no entry carries a variable. A consumer that implements credential templates MUST reject a manifest that violates these rules; one that does not MUST treat every templated entry as matching no URI.
 
 A consumer renders templated entries for each connection from that connection's values, and matches request URIs against the rendered list. A substituted value is a literal, never a pattern. A `{$variable.<name>}` value follows the rules of §7.12 — those of its URL form in the URL form, those of its host form in the authority form, where a variable fills only the host; a consumer matches and egress-checks the host as a [WHATWG URL] parser reads it (which turns `0x7f000001` into `127.0.0.1`). A `{$credential.<field>}` value is judged on its rendered text (§7.6), the same way when a consumer checks a connection's values on creation as when it renders its entries, and follows these:
 
@@ -1495,19 +1536,19 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `variables.schema` | integration | object | MUST if `variables` present | self-contained JSON Schema 2020-12; ≥1 property; each a required `string` named per `VARIABLE_NAME_REGEX`; local `$ref` only | none |
 | `auths` | integration | object | MUST | map keyed by `^[a-z][a-z0-9_]*$`; ≥1 entry | none |
 | `auths.<key>.type` | integration | string | MUST | `oauth2\|api_key\|basic\|mtls\|custom` | none |
-| `auths.<key>.issuer` | integration | string | SHOULD for oauth2 (not required when `source.kind` is `remote`) | OAuth/OIDC issuer; enables discovery. For a `remote` source, discovered at connect time from `source.remote.url` (§7.3). MAY be a URL template (§7.12), excluding the endpoints and `resource` | none |
-| `auths.<key>.authorization_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote`) | RFC 8414 | none |
-| `auths.<key>.token_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote`) | RFC 8414 | none |
+| `auths.<key>.issuer` | integration | string | SHOULD for oauth2 (not required when `source.kind` is `remote` or with `connect.login`) | OAuth/OIDC issuer; enables discovery. For a `remote` source, discovered at connect time from `source.remote.url` (§7.3). MAY be a URL template (§7.12), excluding the endpoints and `resource`; never with `connect.login` (§7.7) | none |
+| `auths.<key>.authorization_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote` or with `connect.login`) | RFC 8414 | none |
+| `auths.<key>.token_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote`); MUST with `connect.login` | RFC 8414 | none |
 | `auths.<key>.userinfo_endpoint` | integration | string | MAY | OIDC Discovery | none |
 | `auths.<key>.token_endpoint_auth_method` | integration | string | MAY | RFC 7591 / OIDC Core values; `client_secret_basic` default (RFC 8414 §2, RFC 7591 §2) | none |
 | `auths.<key>.code_challenge_methods_supported` | integration | string[] | MAY | PKCE methods, e.g. `["S256"]` (RFC 8414 / RFC 7636) | none |
 | `auths.<key>.resource` | integration | string | MAY | RFC 8707 resource indicator (not `audience`) | none |
 | `auths.<key>.authorization_params` | integration | object | MAY | extra authorize query params (AFPS) | none |
 | `auths.<key>.default_scopes` | integration | string[] | MAY | baseline requested scopes | none |
-| `auths.<key>.scope_catalog` | integration | object[] | MAY | `{ value, label, description?, implies? }` (AFPS authoritative) | none |
+| `auths.<key>.scope_catalog` | integration | object[] | MAY (not with `connect.login`) | `{ value, label, description?, implies? }` (AFPS authoritative) | none |
 | `auths.<key>.identity_claims` | integration | object | MAY | AFPS key → JSONPath (singular query) | none |
 | `auths.<key>.required_identity_claims` | integration | string[] | MAY | required OIDC claims | none |
-| `auths.<key>.credentials.schema` | integration | object | MUST for api_key/basic/mtls/custom | self-contained JSON Schema 2020-12; local `$ref` only | none |
+| `auths.<key>.credentials.schema` | integration | object | MUST for api_key/basic/mtls/custom, and for oauth2 with `connect.login` | self-contained JSON Schema 2020-12; local `$ref` only | none |
 | `auths.<key>.delivery` | integration | object | MUST | ≥1 of `http`, `env`, `files`; `http` exclusive of `env`/`files` | none |
 | `auths.<key>.delivery.http` | integration | object | MAY | `{ in, name, prefix?, value, encoding?, allow_server_override? }` | none |
 | `auths.<key>.delivery.http.in` | integration | string | MUST if `http` present | `header\|query\|cookie` (OpenAPI) | none |
@@ -1524,12 +1565,12 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.delivery.files.<path>.mode` | integration | string | MAY | octal string (e.g. `"0400"`) | `"0400"` |
 | `auths.<key>.callback_url_hint` | integration | string | MAY | OAuth-client registration callback hint (often containing `{{callback_url}}`) | none |
 | `auths.<key>.delivery.files` | integration | object | MAY | map of path → `{ value, mode? }`; `mode` octal string | `mode` `"0400"` |
-| `auths.<key>.connect` | integration | object | MAY (custom only) | exactly one of `login` / `tool`; optional `limits` | none |
-| `auths.<key>.connect.login.request` | integration | object | MUST if `login` present | inline HTTP request `{ method, url, headers?, body?, content_type? }` | none |
-| `auths.<key>.connect.login.success_criteria` | integration | object[] | MAY | Arazzo Criterion; default HTTP 2xx | HTTP 2xx |
-| `auths.<key>.connect.login.outputs` | integration | object | MAY | Arazzo runtime-expression string, Arazzo Selector Object `{context,selector,type}`, or AFPS extractor (`cookie`/`jwt`/`regex`) | none |
-| `auths.<key>.connect.login.expires_in_output` | integration | string | MAY | name of the output carrying credential expiry | none |
-| `auths.<key>.connect.login.identity_outputs` | integration | string[] | MAY | names of outputs that establish the connection identity | none |
+| `auths.<key>.connect` | integration | object | MAY (custom; `login` only on oauth2) | exactly one of `login` / `tool`; optional `limits` | none |
+| `auths.<key>.connect.login.request` | integration | object | MUST if `login` present | inline HTTP request `{ method, url, headers?, body?, content_type? }`; on oauth2, the grant parameters of a `POST` form request to `token_endpoint`, without `headers` (§7.7) | none |
+| `auths.<key>.connect.login.success_criteria` | integration | object[] | MAY (not on oauth2) | Arazzo Criterion; default HTTP 2xx | HTTP 2xx |
+| `auths.<key>.connect.login.outputs` | integration | object | MAY (not on oauth2) | Arazzo runtime-expression string, Arazzo Selector Object `{context,selector,type}`, or AFPS extractor (`cookie`/`jwt`/`regex`) | none |
+| `auths.<key>.connect.login.expires_in_output` | integration | string | MAY (not on oauth2) | name of the output carrying credential expiry | none |
+| `auths.<key>.connect.login.identity_outputs` | integration | string[] | MAY (not on oauth2) | names of outputs that establish the connection identity | none |
 | `auths.<key>.connect.tool` | integration | object | MAY (custom only) | experimental alternative to `login`; tools used are auto-hidden (`hidden_tools`) | none |
 | `auths.<key>.connect.limits` | integration | object | MAY | `{ request_timeout_ms?, max_response_bytes? }` (positive numbers) | none |
 | `auths.<key>.authorized_uris` | integration | string[] | MAY | allowed upstream URI patterns (glob; credential or variable templates, §7.9) | none |

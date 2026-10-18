@@ -1,5 +1,60 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-18
+
+Normative change to the 0.3 draft (no spec-version bump).
+
+### Added
+
+- §7.7 `connect.login` on an `oauth2` auth method (#43): the auth method's
+  first token is acquired by a token request instead of through the
+  authorization-code flow, for a provider whose first grant cannot be
+  redirected to the consumer (the user obtains a grant elsewhere, for example
+  a refresh token, and submits it). `connect.login.request` describes only the
+  grant parameters of an RFC 6749 token request: `method` MUST be `POST`,
+  `url` MUST equal `token_endpoint` (string equality, neither templated),
+  `content_type` MUST be `application/x-www-form-urlencoded`, `headers` MUST
+  NOT be declared, and `body` carries `grant_type` and that grant's
+  parameters, filled from `credentials.schema` with the §7.7 encoding rules; a
+  placeholder MUST NOT stand for a parameter name, and the body MUST NOT carry
+  `client_id`, `client_secret`, `client_assertion`, `client_assertion_type` or
+  `resource`. The consumer authenticates its client itself per
+  `token_endpoint_auth_method` (RFC 6749 §2.3, RFC 7591 §2) with the client
+  the connection is bound to — the client that later refreshes it — adds the
+  RFC 8707 `resource` when it sends one, and MUST NOT send the request when
+  §7.3 client binding forbids presenting that client to `token_endpoint`.
+  `outputs`, `success_criteria`, `expires_in_output` and `identity_outputs`
+  MUST NOT be declared: the response is an RFC 6749 §5.1 token response or a
+  §5.2 error response, and a consumer MUST NOT store a connection from
+  anything but a successful token response. A submitted `refresh_token`
+  remains the connection's refresh token when the response omits one (RFC
+  6749 §6). Identity follows §7.4 as for the authorization-code flow. Such an
+  auth method MUST declare `token_endpoint` and `credentials.schema`, MUST NOT
+  declare a templated `issuer` or `scope_catalog`, and MUST NOT be declared
+  under a `remote` source; once acquired, its connection expires, refreshes
+  and rotates as any `oauth2` connection.
+
+### Changed
+
+- §7.7 `connect` is no longer `custom`-only: `connect.login` is also valid on
+  `oauth2`; `connect.tool` stays `custom`-only.
+- §7.3 an `oauth2` auth method declaring `connect.login` requires
+  `token_endpoint` alone — neither `issuer` nor `authorization_endpoint` —
+  whether or not it declares an `issuer`.
+- §7.5 `credentials.schema` is REQUIRED on an `oauth2` auth method declaring
+  `connect.login`: it declares the submitted fields.
+- §7.2, §7.6, §7.7 gating rule, §7.9 and Appendix A scoped accordingly: the
+  credential fields of a `connect` auth are its outputs, and the upstream of
+  a `connect.login` is its request URL, only on a `custom` auth method.
+
+### Migration
+
+Producers: nothing to change; a provider modelled as a `custom` auth with
+`connect.login` against a token endpoint MAY move to an `oauth2` auth method
+to get refresh and rotation. Consumers: a consumer that does not implement
+this revision rejects such a manifest as before (`connect` on a non-`custom`
+auth). Validate with `@afps-spec/schema` 0.10.0.
+
 ## Spec 0.3 revision — 2026-10-15
 
 Normative change to the 0.3 draft (no spec-version bump).
@@ -135,6 +190,17 @@ makes no back-compat promise (as for 0.4.0, 0.8.0 and 0.9.0).
   accepted any value there, the field being unknown. The generated
   `v0/integration.schema.json` carries the wildcard rule as an `if`/`then`, so
   a JSON-Schema-only validator rejects it too.
+- `connect.login` on an `oauth2` auth method (§7.7, #43) is accepted, under
+  the rules of the 2026-10-18 revision: `token_endpoint` and
+  `credentials.schema` required; no templated `issuer`, no `scope_catalog`, no
+  `remote` source; request `POST` to exactly `token_endpoint`, form-encoded,
+  without `headers`, its body carrying `grant_type` and no client
+  authentication or `resource` parameter nor a placeholder parameter name; no
+  `outputs`, `success_criteria`, `expires_in_output` or `identity_outputs`.
+  `connect.tool` stays `custom`-only. The generated
+  `v0/integration.schema.json` mirrors these rules, except the equality of
+  `url` and `token_endpoint` and the percent-decoding of body parameter names,
+  which are Zod only.
 
 ## Spec 0.3 revision — 2026-10-10
 

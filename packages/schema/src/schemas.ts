@@ -583,6 +583,102 @@ export const setupGuide = z.looseObject({
 // Integration auth cross-field validation (§7)
 // ─────────────────────────────────────────────
 
+/** Body parameters an oauth2 `connect.login` leaves to the consumer: client authentication and `resource` (§7.7). */
+export const OAUTH2_LOGIN_CONSUMER_PARAMS = [
+  "client_id",
+  "client_secret",
+  "client_assertion",
+  "client_assertion_type",
+  "resource",
+] as const;
+
+/** Login fields an oauth2 `connect.login` leaves to RFC 6749 §5.1 / §5.2 token-response processing (§7.7). */
+export const OAUTH2_LOGIN_RESPONSE_FIELDS = ["outputs", "success_criteria", "expires_in_output", "identity_outputs"] as const;
+
+/** Parameter names of an `application/x-www-form-urlencoded` body (WHATWG URL parsing; `+` is a space). */
+function formParameterNames(body: string): string[] {
+  return body
+    .split("&")
+    .filter((pair) => pair.length > 0)
+    .map((pair) => {
+      const name = pair.split("=", 1)[0]!.replace(/\+/g, " ");
+      try {
+        return decodeURIComponent(name);
+      } catch {
+        return name;
+      }
+    });
+}
+
+/**
+ * §7.7 — `connect.login` on an oauth2 auth method: a token request carrying only
+ * grant parameters, to `token_endpoint`, whose response is an RFC 6749 token
+ * response. The consumer adds client authentication and `resource` itself.
+ */
+function refineOauth2Login(
+  at: string[],
+  method: Record<string, unknown>,
+  login: Record<string, unknown>,
+  ctx: z.RefinementCtx,
+  sourceKind: unknown,
+): void {
+  const issue = (path: (string | number)[], message: string) =>
+    ctx.addIssue({ code: "custom", path: [...at, ...path], message: `${message} (§7.7)` });
+  const requestAt = ["connect", "login", "request"];
+
+  if (method.token_endpoint === undefined) {
+    issue(["token_endpoint"], "an oauth2 auth method declaring connect.login requires token_endpoint");
+  }
+  if (isTemplated(method.issuer)) {
+    issue(["issuer"], "an oauth2 auth method declaring connect.login MUST NOT declare a templated issuer");
+  }
+  if (sourceKind === "remote") {
+    issue(["connect", "login"], "connect.login on an oauth2 auth method is not allowed when the integration source.kind is remote");
+  }
+  if (method.scope_catalog !== undefined) {
+    issue(["scope_catalog"], "an oauth2 auth method declaring connect.login MUST NOT declare scope_catalog");
+  }
+  for (const field of OAUTH2_LOGIN_RESPONSE_FIELDS) {
+    if (login[field] !== undefined) {
+      issue(["connect", "login", field], `${field} MUST NOT be declared on an oauth2 connect.login; the response is an RFC 6749 token response`);
+    }
+  }
+
+  const request = (login.request ?? {}) as Record<string, unknown>;
+  if (request.method !== "POST") {
+    issue([...requestAt, "method"], "an oauth2 connect.login request method MUST be POST");
+  }
+  if (typeof request.url === "string") {
+    if (request.url.includes("{{")) {
+      issue([...requestAt, "url"], "an oauth2 connect.login request url MUST NOT be templated");
+    } else if (method.token_endpoint !== undefined && request.url !== method.token_endpoint) {
+      issue([...requestAt, "url"], "an oauth2 connect.login request url MUST equal token_endpoint");
+    }
+  }
+  if (request.content_type !== "application/x-www-form-urlencoded") {
+    issue([...requestAt, "content_type"], "an oauth2 connect.login request content_type MUST be application/x-www-form-urlencoded");
+  }
+  if (request.headers !== undefined) {
+    issue([...requestAt, "headers"], "an oauth2 connect.login request MUST NOT declare headers; the consumer authenticates its client itself");
+  }
+  if (typeof request.body !== "string") {
+    issue([...requestAt, "body"], "an oauth2 connect.login request MUST declare a body carrying grant_type");
+    return;
+  }
+  const names = formParameterNames(request.body);
+  if (!names.includes("grant_type")) {
+    issue([...requestAt, "body"], "an oauth2 connect.login request body MUST carry grant_type");
+  }
+  if (names.some((name) => name.includes("{{"))) {
+    issue([...requestAt, "body"], "a placeholder in an oauth2 connect.login request body MUST NOT stand for a parameter name");
+  }
+  for (const name of OAUTH2_LOGIN_CONSUMER_PARAMS) {
+    if (names.includes(name)) {
+      issue([...requestAt, "body"], `an oauth2 connect.login request body MUST NOT carry ${name}; the consumer adds client authentication and resource itself`);
+    }
+  }
+}
+
 function refineAuthMethod(
   key: string,
   method: Record<string, unknown>,
@@ -592,44 +688,60 @@ function refineAuthMethod(
   const at = ["auths", key];
   const type = method.type;
 
+  const connect = method.connect as Record<string, unknown> | undefined;
+  const oauth2Login = type === "oauth2" && connect?.login !== undefined;
+
   if (type === "oauth2") {
     // §7.3 — issuer enables discovery; otherwise endpoints are required.
     // Exception: a `remote` source is an OAuth protected resource whose
     // authorization server (and thus its endpoints) is discovered at connect
     // time from `source.remote.url` — RFC 9728 protected-resource metadata →
     // RFC 8414 authorization-server metadata. Such an auth MAY therefore omit
-    // both `issuer` and the explicit endpoints.
+    // both `issuer` and the explicit endpoints. An auth declaring
+    // `connect.login` redirects nothing: it requires `token_endpoint` alone
+    // (checked in refineOauth2Login).
     const isRemoteSource = sourceKind === "remote";
     const hasIssuer = typeof method.issuer === "string" && method.issuer.length > 0;
     const hasEndpoints = method.authorization_endpoint != null && method.token_endpoint != null;
-    if (!isRemoteSource && !hasIssuer && !hasEndpoints) {
+    if (!isRemoteSource && !oauth2Login && !hasIssuer && !hasEndpoints) {
       ctx.addIssue({
         code: "custom",
         path: [...at],
         message:
-          "oauth2 auth method requires `issuer` (for discovery) OR both `authorization_endpoint` and `token_endpoint` (unless the integration `source.kind` is `remote`, where the authorization server is discovered from `source.remote.url`)",
+          "oauth2 auth method requires `issuer` (for discovery) OR both `authorization_endpoint` and `token_endpoint` (unless the integration `source.kind` is `remote`, where the authorization server is discovered from `source.remote.url`, or the auth declares `connect.login`, which requires `token_endpoint` alone)",
       });
     }
-  } else if (type === "api_key" || type === "basic" || type === "mtls" || type === "custom") {
-    // §7.5 — credentials.schema is REQUIRED.
+  }
+  if (type === "api_key" || type === "basic" || type === "mtls" || type === "custom" || oauth2Login) {
+    // §7.5 — credentials.schema is REQUIRED (for oauth2, the fields a
+    // `connect.login` token request submits).
     const creds = method.credentials as Record<string, unknown> | undefined;
     if (!creds || creds.schema === undefined) {
       ctx.addIssue({
         code: "custom",
         path: [...at, "credentials", "schema"],
-        message: `credentials.schema is required for ${type} auth method`,
+        message: oauth2Login
+          ? "credentials.schema is required for an oauth2 auth method declaring connect.login (§7.5, §7.7)"
+          : `credentials.schema is required for ${type} auth method`,
       });
     }
   }
 
-  // §7.7 — connect only valid for custom; exactly one of login/tool.
-  const connect = method.connect as Record<string, unknown> | undefined;
+  // §7.7 — connect valid for custom, `connect.login` also for oauth2;
+  // `connect.tool` custom only; exactly one of login/tool.
   if (connect) {
-    if (type !== "custom") {
+    if (type !== "custom" && type !== "oauth2") {
       ctx.addIssue({
         code: "custom",
         path: [...at, "connect"],
-        message: "connect is only valid for auth methods of type custom",
+        message: "connect is only valid for auth methods of type custom (and connect.login also for oauth2)",
+      });
+    }
+    if (type === "oauth2" && connect.tool !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: [...at, "connect", "tool"],
+        message: "connect.tool is only valid for auth methods of type custom",
       });
     }
     const hasLogin = connect.login !== undefined;
@@ -642,6 +754,7 @@ function refineAuthMethod(
       });
     }
   }
+  if (oauth2Login) refineOauth2Login(at, method, connect!.login as Record<string, unknown>, ctx, sourceKind);
 
   // §7.6 — at least one delivery channel; http exclusive of env/files.
   const delivery = method.delivery as Record<string, unknown> | undefined;
@@ -805,9 +918,7 @@ function refineConnectionVariables(
 
     // The template choosing the upstream this auth's credential is for, if any.
     let upstreamTemplate: unknown;
-    if (connect) {
-      upstreamTemplate = connect.tool && remoteTemplated ? remoteUrl : undefined;
-    } else if (method.type === "oauth2") {
+    if (method.type === "oauth2") {
       const issuerTemplated = isTemplated(method.issuer);
       const declared = DISCOVERED_OAUTH_FIELDS.filter((field) => method[field] !== undefined);
       if ((issuerTemplated || remoteTemplated) && declared.length > 0) {
@@ -821,6 +932,8 @@ function refineConnectionVariables(
       }
       // Tokens are for the resource: a remote source's URL, else the issuer.
       upstreamTemplate = source?.kind === "remote" ? remoteUrl : method.issuer;
+    } else if (connect) {
+      upstreamTemplate = connect.tool && remoteTemplated ? remoteUrl : undefined;
     }
     const issued = connect !== undefined || method.type === "oauth2";
     const upstreamOrigin = isTemplated(upstreamTemplate) ? originTemplate(upstreamTemplate) : undefined;
