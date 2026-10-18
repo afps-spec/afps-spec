@@ -1412,7 +1412,7 @@ describe("credential delivery (§7.6)", () => {
 });
 
 // ─────────────────────────────────────────────
-// §7.7 — connect (custom only, exactly one of login/tool)
+// §7.7 — connect (custom; login also oauth2; exactly one of login/tool)
 // ─────────────────────────────────────────────
 
 describe("connect (§7.7)", () => {
@@ -1557,6 +1557,309 @@ describe("connect (§7.7)", () => {
   test("connect.login.outputs rejects regex extractor missing `source` or `pattern`", () => {
     expectInvalid(integrationManifestSchema, withOutput({ from: "regex", pattern: "x" }));
     expectInvalid(integrationManifestSchema, withOutput({ from: "regex", source: "x" }));
+  });
+});
+
+// ─────────────────────────────────────────────
+// §7.7 — connect.login on an oauth2 auth method (token request)
+// ─────────────────────────────────────────────
+
+describe("connect.login on an oauth2 auth method (§7.7)", () => {
+  const TOKEN_ENDPOINT = "https://idp.example.com/oauth/token";
+  const request = {
+    method: "POST",
+    url: TOKEN_ENDPOINT,
+    content_type: "application/x-www-form-urlencoded",
+    body: "grant_type=refresh_token&refresh_token={{refresh_token}}",
+  };
+  const oauthAuth = {
+    type: "oauth2",
+    token_endpoint: TOKEN_ENDPOINT,
+    token_endpoint_auth_method: "none",
+    credentials: {
+      schema: { type: "object", properties: { refresh_token: { type: "string" } }, required: ["refresh_token"] },
+    },
+    connect: { login: { request } },
+    delivery: { http: { in: "header", name: "Authorization", prefix: "Bearer ", value: "{$credential.access_token}" } },
+    authorized_uris: ["https://api.example.com/**"],
+  };
+  const manifest = (auth: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    name: "@test/integration",
+    version: "1.0.0",
+    type: "integration",
+    schema_version: "0.3",
+    display_name: "Test",
+    source: { kind: "none" },
+    auths: { oauth: auth },
+    ...extra,
+  });
+  const withAuth = (patch: Record<string, unknown>) => manifest({ ...oauthAuth, ...patch });
+  const withRequest = (patch: Record<string, unknown>) =>
+    withAuth({ connect: { login: { request: { ...request, ...patch } } } });
+  const without = (record: Record<string, unknown>, key: string) => {
+    const { [key]: _omitted, ...rest } = record;
+    return rest;
+  };
+
+  // `<path> <message>` of every issue the Zod schema raises.
+  const issuesOf = (value: unknown) => {
+    const result = integrationManifestSchema.safeParse(value);
+    expect(result.success).toBe(false);
+    return result.success ? [] : result.error.issues.map((issue) => `${issue.path.join(".")} ${issue.message}`);
+  };
+  const expectOnlyIssue = (value: unknown, path: string, message: string) => {
+    expect(issuesOf(value)).toEqual([`${path} ${message} (§7.7)`]);
+  };
+
+  const validate = new Ajv2020({ strict: false, validateFormats: false }).compile(
+    JSON.parse(readFileSync(join(import.meta.dir, "../v0/integration.schema.json"), "utf8")),
+  );
+  // Rejected by Zod and, unless `jsonToo` is false, by the generated JSON Schema.
+  const expectRejected = (value: unknown, jsonToo = true) => {
+    expectInvalid(integrationManifestSchema, value);
+    if (jsonToo) expect(validate(value)).toBe(false);
+  };
+
+  test("an oauth2 auth with token_endpoint, credentials.schema and connect.login is valid", () => {
+    expectValid(integrationManifestSchema, manifest(oauthAuth));
+    expect(validate(manifest(oauthAuth))).toBe(true);
+    // token_endpoint alone: neither authorization_endpoint nor issuer is required.
+    expect("authorization_endpoint" in oauthAuth || "issuer" in oauthAuth).toBe(false);
+    // A literal issuer, identity claims and a userinfo endpoint stay available (§7.4).
+    const withIssuer = withAuth({
+      issuer: "https://idp.example.com",
+      userinfo_endpoint: "https://idp.example.com/userinfo",
+      identity_claims: { account_id: "$.sub" },
+      default_scopes: ["profile"],
+    });
+    expectValid(integrationManifestSchema, withIssuer);
+    expect(validate(withIssuer)).toBe(true);
+    // Any grant: an extension grant whose parameters come from credentials.schema.
+    const exchange = withRequest({
+      body: "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token={{refresh_token}}",
+    });
+    expectValid(integrationManifestSchema, exchange);
+    expect(validate(exchange)).toBe(true);
+  });
+
+  test("connect.tool stays custom-only", () => {
+    expect(issuesOf(withAuth({ connect: { tool: {} } }))).toContain(
+      "auths.oauth.connect.tool connect.tool is only valid for auth methods of type custom",
+    );
+    expect(validate(withAuth({ connect: { tool: {} } }))).toBe(false);
+  });
+
+  test("connect stays invalid on api_key, basic and mtls", () => {
+    for (const type of ["api_key", "basic", "mtls"]) {
+      const value = withAuth({ type, delivery: { env: { X: { value: "{$credential.refresh_token}" } } }, authorized_uris: undefined });
+      expectRejected(value);
+    }
+  });
+
+  test("the request url MUST equal token_endpoint and is never templated", () => {
+    expectOnlyIssue(
+      withRequest({ url: "https://idp.example.com/oauth/token/" }),
+      "auths.oauth.connect.login.request.url",
+      "an oauth2 connect.login request url MUST equal token_endpoint",
+    );
+    // String equality is Zod only (JSON Schema has no cross-field equality).
+    expect(validate(withRequest({ url: "https://evil.example/token" }))).toBe(true);
+    expectOnlyIssue(
+      withRequest({ url: "https://idp.example.com/{{tenant}}/token" }),
+      "auths.oauth.connect.login.request.url",
+      "an oauth2 connect.login request url MUST NOT be templated",
+    );
+    expect(validate(withRequest({ url: "https://idp.example.com/{{tenant}}/token" }))).toBe(false);
+  });
+
+  test("method MUST be POST, content_type form-urlencoded, headers absent", () => {
+    for (const method of ["GET", "post"]) {
+      expectOnlyIssue(withRequest({ method }), "auths.oauth.connect.login.request.method", "an oauth2 connect.login request method MUST be POST");
+      expectRejected(withRequest({ method }));
+    }
+    for (const content_type of [undefined, "application/json", "application/x-www-form-urlencoded; charset=utf-8"]) {
+      const value = withRequest({ content_type });
+      expectOnlyIssue(
+        value,
+        "auths.oauth.connect.login.request.content_type",
+        "an oauth2 connect.login request content_type MUST be application/x-www-form-urlencoded",
+      );
+      expectRejected(value);
+    }
+    for (const headers of [{}, { Authorization: "Basic {{credentials}}" }]) {
+      expectOnlyIssue(
+        withRequest({ headers }),
+        "auths.oauth.connect.login.request.headers",
+        "an oauth2 connect.login request MUST NOT declare headers; the consumer authenticates its client itself",
+      );
+      expectRejected(withRequest({ headers }));
+    }
+  });
+
+  test("the body carries grant_type and only grant parameters", () => {
+    expectOnlyIssue(
+      withRequest({ body: undefined }),
+      "auths.oauth.connect.login.request.body",
+      "an oauth2 connect.login request MUST declare a body carrying grant_type",
+    );
+    expectRejected(withRequest({ body: undefined }));
+    expectOnlyIssue(
+      withRequest({ body: "refresh_token={{refresh_token}}" }),
+      "auths.oauth.connect.login.request.body",
+      "an oauth2 connect.login request body MUST carry grant_type",
+    );
+    expectRejected(withRequest({ body: "refresh_token={{refresh_token}}" }));
+  });
+
+  test("parameter names are literal RFC 6749 param-names, refused alike by Zod and JSON Schema", () => {
+    const message = "every parameter name of an oauth2 connect.login request body MUST be a literal RFC 6749 param-name, never percent-encoded or a placeholder";
+    for (const extra of ["{{field}}=x", "client%5Fid=x", "a+b=x", "a b=x", "", "=x"]) {
+      const value = withRequest({ body: `${request.body}&${extra}` });
+      expectOnlyIssue(value, "auths.oauth.connect.login.request.body", message);
+      expectRejected(value);
+    }
+    // A percent-encoded grant_type is not grant_type: both validators refuse it.
+    const encoded = withRequest({ body: "grant%5Ftype=refresh_token&refresh_token={{refresh_token}}" });
+    expect(issuesOf(encoded)).toEqual([
+      `auths.oauth.connect.login.request.body ${message} (§7.7)`,
+      "auths.oauth.connect.login.request.body an oauth2 connect.login request body MUST carry grant_type (§7.7)",
+    ]);
+    expectRejected(encoded);
+    // Values keep the placeholder and encoding rules: both validators accept them.
+    for (const body of [`${request.body}&scope=a%20b+c`, `${request.body}&extra={{refresh_token}}&empty=`, "grant_type=refresh_token&refresh_token={{refresh_token}}&x=a=b"]) {
+      expectValid(integrationManifestSchema, withRequest({ body }));
+      expect(validate(withRequest({ body }))).toBe(true);
+    }
+  });
+
+  test("grant_type is never password nor a placeholder", () => {
+    for (const grant of ["password", "pass%77ord", "%70%61%73%73%77%6Frd", "pass%77%6frd"]) {
+      const value = withRequest({ body: `grant_type=${grant}&username={{refresh_token}}` });
+      expectOnlyIssue(
+        value,
+        "auths.oauth.connect.login.request.body",
+        "the grant_type of an oauth2 connect.login request body MUST NOT be password (RFC 9700 §2.4)",
+      );
+      expectRejected(value);
+    }
+    // A duplicate grant_type is checked too.
+    expectRejected(withRequest({ body: `${request.body}&grant_type=password` }));
+    const templated = withRequest({ body: "grant_type={{refresh_token}}&refresh_token={{refresh_token}}" });
+    expectOnlyIssue(
+      templated,
+      "auths.oauth.connect.login.request.body",
+      "the grant_type of an oauth2 connect.login request body MUST NOT carry a placeholder",
+    );
+    expectRejected(templated);
+    // Other grants, and values merely containing `password`, are accepted by both.
+    for (const grant of ["passwords", "my_password", "client_credentials"]) {
+      const value = withRequest({ body: `grant_type=${grant}&refresh_token={{refresh_token}}` });
+      expectValid(integrationManifestSchema, value);
+      expect(validate(value)).toBe(true);
+    }
+  });
+
+  test("connect.limits is refused", () => {
+    const value = withAuth({ connect: { login: { request }, limits: { request_timeout_ms: 1000 } } });
+    expectOnlyIssue(
+      value,
+      "auths.oauth.connect.limits",
+      "connect.limits MUST NOT be declared on an oauth2 auth method; the consumer's token-request limits apply",
+    );
+    expectRejected(value);
+  });
+
+  test("the body MUST NOT carry client authentication or resource", () => {
+    for (const name of ["client_id", "client_secret", "client_assertion", "client_assertion_type", "resource"]) {
+      const value = withRequest({ body: `${request.body}&${name}=x` });
+      expectOnlyIssue(
+        value,
+        "auths.oauth.connect.login.request.body",
+        `an oauth2 connect.login request body MUST NOT carry ${name}; the consumer adds client authentication and resource itself`,
+      );
+      expectRejected(value);
+    }
+    // A parameter value that merely mentions a forbidden name is not that parameter.
+    expectValid(integrationManifestSchema, withRequest({ body: `${request.body}&audience=client_id` }));
+  });
+
+  test("outputs, success_criteria, expires_in_output and identity_outputs MUST NOT be declared", () => {
+    for (const [field, value] of [
+      ["outputs", { token: "$response.body#/access_token" }],
+      ["success_criteria", [{ condition: "$statusCode == 200" }]],
+      ["expires_in_output", "exp"],
+      ["identity_outputs", ["sub"]],
+    ] as const) {
+      const manifestValue = withAuth({ connect: { login: { request, [field]: value } } });
+      expectOnlyIssue(
+        manifestValue,
+        `auths.oauth.connect.login.${field}`,
+        `${field} MUST NOT be declared on an oauth2 connect.login; the response is an RFC 6749 token response`,
+      );
+      expectRejected(manifestValue);
+    }
+  });
+
+  test("token_endpoint and credentials.schema are required", () => {
+    const noEndpoint = manifest(without(oauthAuth, "token_endpoint"));
+    expect(issuesOf(noEndpoint)).toEqual([
+      "auths.oauth.token_endpoint an oauth2 auth method declaring connect.login requires token_endpoint (§7.7)",
+    ]);
+    expectRejected(noEndpoint);
+    // An issuer does not stand in for token_endpoint here.
+    expectRejected(manifest({ ...without(oauthAuth, "token_endpoint"), issuer: "https://idp.example.com" }));
+    const noCredentials = manifest(without(oauthAuth, "credentials"));
+    expect(issuesOf(noCredentials)).toEqual([
+      "auths.oauth.credentials.schema credentials.schema is required for an oauth2 auth method declaring connect.login (§7.5, §7.7)",
+    ]);
+    expectRejected(noCredentials);
+  });
+
+  test("a templated issuer is refused", () => {
+    const value = manifest(
+      { ...oauthAuth, issuer: "{$variable.base_url}" },
+      { variables: { schema: { type: "object", properties: { base_url: { type: "string" } }, required: ["base_url"] } } },
+    );
+    expect(issuesOf(value)).toContain(
+      "auths.oauth.issuer an oauth2 auth method declaring connect.login MUST NOT declare a templated issuer (§7.7)",
+    );
+    expectRejected(value);
+  });
+
+  test("a remote source is refused", () => {
+    const value = manifest(oauthAuth, { source: { kind: "remote", remote: { url: "https://mcp.example.com/mcp", transport: "streamable-http" } } });
+    expectOnlyIssue(
+      value,
+      "auths.oauth.connect.login",
+      "connect.login on an oauth2 auth method is not allowed when the integration source.kind is remote",
+    );
+    expectRejected(value);
+  });
+
+  test("scope_catalog is refused", () => {
+    const value = withAuth({ scope_catalog: [{ value: "profile", label: "Profile" }] });
+    expectOnlyIssue(value, "auths.oauth.scope_catalog", "an oauth2 auth method declaring connect.login MUST NOT declare scope_catalog");
+    expectRejected(value);
+  });
+
+  test("a custom connect.login is unchanged by the oauth2 rules", () => {
+    const custom = manifest({
+      type: "custom",
+      credentials: { schema: { type: "object", properties: { username: { type: "string" } } } },
+      connect: {
+        login: {
+          request: { method: "PUT", url: "https://api.e.com/{{username}}/login", headers: { "X-Client": "a" }, content_type: "application/json", body: '{"client_id":"x"}' },
+          success_criteria: [{ condition: "$statusCode == 200" }],
+          outputs: { token: "$response.body#/access_token", exp: "$response.body#/exp" },
+          expires_in_output: "exp",
+          identity_outputs: ["token"],
+        },
+      },
+      scope_catalog: [{ value: "x", label: "X" }],
+      delivery: { env: { TOKEN: { value: "{$credential.token}", sensitive: true } } },
+    });
+    expectValid(integrationManifestSchema, custom);
+    expect(validate(custom)).toBe(true);
   });
 });
 

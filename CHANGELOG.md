@@ -1,5 +1,74 @@
 # Changelog
 
+## Spec 0.3 revision — 2026-10-18
+
+Normative change to the 0.3 draft (no spec-version bump).
+
+### Added
+
+- §7.7 `connect.login` on an `oauth2` auth method (#43): the auth method's
+  first token is acquired by a token request instead of through the
+  authorization-code flow, for a provider whose first grant cannot be
+  redirected to the consumer (the user obtains a grant elsewhere, for example
+  a refresh token, and submits it). `connect.login.request` describes only the
+  grant parameters of an RFC 6749 token request: `method` MUST be `POST`,
+  `url` MUST equal `token_endpoint` (string equality, neither templated),
+  `content_type` MUST be `application/x-www-form-urlencoded`, `headers` MUST
+  NOT be declared, and `body` carries `grant_type` and that grant's
+  parameters. Every parameter name is written literally as an RFC 6749 §8.2
+  `param-name` (never percent-encoded, never a placeholder); values are filled
+  from `credentials.schema` with the §7.7 encoding rules. `grant_type` carries
+  no placeholder and MUST NOT be `password` (RFC 9700 §2.4), and the body MUST
+  NOT carry `client_id`, `client_secret`, `client_assertion`,
+  `client_assertion_type` or `resource`. `default_scopes` adds nothing to the
+  request: a needed `scope` is written in the body. The consumer authenticates
+  its client itself per `token_endpoint_auth_method` (RFC 6749 §2.3, RFC 7591
+  §2) with the client the connection is bound to — the client that later
+  refreshes it — never with a method it does not implement and never falling
+  back to another, adds the RFC 8707 `resource` when it sends one, and MUST
+  NOT send the request when §7.3 client binding forbids presenting that client
+  to `token_endpoint` — with an `issuer`, unless `token_endpoint` is the token
+  endpoint of that issuer's validated metadata. It SHOULD present a grant at
+  most once per user submission (RFC 9700 §4.14.2). `outputs`,
+  `success_criteria`, `expires_in_output`, `identity_outputs` and
+  `connect.limits` MUST NOT be declared: the response is an RFC 6749 §5.1
+  token response (`access_token` and `token_type` REQUIRED) or a §5.2 error
+  response, and a consumer MUST NOT store a connection from anything but a
+  successful token response, nor one whose `token_type` it cannot use for
+  delivery (this specification defines `Bearer`, RFC 6750). For a
+  `refresh_token` grant whose response omits `refresh_token`, the grant's
+  `refresh_token` parameter as sent remains the connection's refresh token
+  (RFC 6749 §6); nothing is kept for other grants. The granted scope is the
+  response's `scope`, else the request's `scope`, else unknown. Identity comes
+  from `identity_claims` over the token response and `userinfo_endpoint`
+  (§7.4); an `id_token` counts only once validated per OpenID Connect Core
+  §3.1.3.7. Such an auth method MUST declare `token_endpoint` and
+  `credentials.schema`, MUST NOT declare a templated `issuer` or
+  `scope_catalog`, and MUST NOT be declared under a `remote` source; once
+  acquired, its connection expires, refreshes and rotates as any `oauth2`
+  connection.
+
+### Changed
+
+- §7.7 `connect` is no longer `custom`-only: `connect.login` is also valid on
+  `oauth2`; `connect.tool` stays `custom`-only.
+- §7.3 an `oauth2` auth method declaring `connect.login` requires
+  `token_endpoint` alone — neither `issuer` nor `authorization_endpoint` —
+  whether or not it declares an `issuer`.
+- §7.5 `credentials.schema` is REQUIRED on an `oauth2` auth method declaring
+  `connect.login`: it declares the submitted fields.
+- §7.2, §7.6, §7.7 gating rule, §7.9 and Appendix A scoped accordingly: the
+  credential fields of a `connect` auth are its outputs, and the upstream of
+  a `connect.login` is its request URL, only on a `custom` auth method.
+
+### Migration
+
+Producers: nothing to change; a provider modelled as a `custom` auth with
+`connect.login` against a token endpoint MAY move to an `oauth2` auth method
+to get refresh and rotation. Consumers: a consumer that does not implement
+this revision rejects such a manifest as before (`connect` on a non-`custom`
+auth). Validate with `@afps-spec/schema` 0.10.0.
+
 ## Spec 0.3 revision — 2026-10-15
 
 Normative change to the 0.3 draft (no spec-version bump).
@@ -118,7 +187,7 @@ resolved selects nothing. A consumer that does not implement this revision
 keeps exposing nothing for an absent `tools`: fewer tools, never more.
 Validate with `@afps-spec/schema` 0.10.0.
 
-## Schema `@afps-spec/schema@0.10.0` — 2026-10-13
+## Schema `@afps-spec/schema@0.10.0` — 2026-10-18
 
 A manifest that validated under 0.9.0 still validates unless an integration
 carried a top-level `default_tools` that is neither an array of strings nor
@@ -135,6 +204,17 @@ makes no back-compat promise (as for 0.4.0, 0.8.0 and 0.9.0).
   accepted any value there, the field being unknown. The generated
   `v0/integration.schema.json` carries the wildcard rule as an `if`/`then`, so
   a JSON-Schema-only validator rejects it too.
+- `connect.login` on an `oauth2` auth method (§7.7, #43) is accepted, under
+  the rules of the 2026-10-18 revision: `token_endpoint` and
+  `credentials.schema` required; no templated `issuer`, no `scope_catalog`, no
+  `remote` source; request `POST` to exactly `token_endpoint`, form-encoded,
+  without `headers`, its body carrying `grant_type` and no client
+  authentication or `resource` parameter nor a placeholder parameter name; no
+  `outputs`, `success_criteria`, `expires_in_output` or `identity_outputs`.
+  `connect.tool` stays `custom`-only. The generated
+  `v0/integration.schema.json` mirrors these rules, except the equality of
+  `url` and `token_endpoint` and the percent-decoding of body parameter names,
+  which are Zod only.
 
 ## Spec 0.3 revision — 2026-10-10
 

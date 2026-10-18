@@ -17,6 +17,9 @@ import { writeFile, mkdir, readFile } from "node:fs/promises";
 import {
   createSchemas,
   afpsJsonSchemaOverride,
+  OAUTH2_LOGIN_CONSUMER_PARAMS,
+  OAUTH2_LOGIN_PARAM_NAME_PATTERN,
+  OAUTH2_LOGIN_RESPONSE_FIELDS,
   VARIABLE_AUTHORITY_FORM_ENTRY,
   VARIABLE_NAME_REGEX,
   VARIABLE_URL_FORM_ENTRY,
@@ -47,6 +50,15 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
     // template is accepted only by the URL_TEMPLATE_REGEX branch (`format: "uri"` is an
     // annotation for most JSON Schema validators).
     const NO_TEMPLATE = { pattern: "\\{\\$" };
+    // §7.7 — an oauth2 `connect.login` body pair: a literal param-name, then an optional value.
+    const OAUTH2_PARAM_PAIR = `${OAUTH2_LOGIN_PARAM_NAME_PATTERN}(?:=[^&]*)?`;
+    // `password` once percent-decoded: each letter literal or its `%XX` (hex case-insensitive).
+    const PASSWORD_FORM_VALUE = [..."password"]
+      .map((letter) => {
+        const hex = letter.charCodeAt(0).toString(16);
+        return `(?:${letter}|%${hex[0]}[${hex[1]!.toLowerCase()}${hex[1]!.toUpperCase()}])`;
+      })
+      .join("");
     const method = schema.properties.auths.additionalProperties as Record<string, any>;
     const remote = schema.properties.source.oneOf.find(
       (variant: Record<string, any>) => variant.properties.kind.const === "remote",
@@ -74,12 +86,12 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
         if: { properties: { type: { enum: ["api_key", "basic", "mtls", "custom"] } }, required: ["type"] },
         then: { required: ["credentials"], properties: { credentials: { required: ["schema"] } } },
       },
-      // §7.7 — connect only valid for custom; exactly one of login/tool.
+      // §7.7 — connect valid for custom (and `login` for oauth2); exactly one of login/tool.
       {
         if: { required: ["connect"] },
         then: {
           properties: {
-            type: { const: "custom" },
+            type: { enum: ["custom", "oauth2"] },
             connect: {
               oneOf: [
                 { required: ["login"], not: { required: ["tool"] } },
@@ -88,6 +100,49 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
             },
           },
           required: ["type"],
+        },
+      },
+      // §7.7 — `connect` on oauth2: `login` only, no `limits`, a token request
+      // carrying grant parameters to `token_endpoint` (url equality is Zod only).
+      // Parameter names are literal, so the patterns below read the body as Zod
+      // does; `password` is matched with each letter literal or percent-encoded.
+      {
+        if: { properties: { type: { const: "oauth2" } }, required: ["type", "connect"] },
+        then: {
+          required: ["token_endpoint", "credentials"],
+          not: { required: ["scope_catalog"] },
+          properties: {
+            issuer: { not: NO_TEMPLATE },
+            credentials: { required: ["schema"] },
+            connect: {
+              not: { anyOf: [{ required: ["tool"] }, { required: ["limits"] }] },
+              properties: {
+                login: {
+                  not: { anyOf: OAUTH2_LOGIN_RESPONSE_FIELDS.map((field) => ({ required: [field] })) },
+                  properties: {
+                    request: {
+                      required: ["content_type", "body"],
+                      not: { required: ["headers"] },
+                      properties: {
+                        method: { const: "POST" },
+                        url: { not: { pattern: "\\{\\{" } },
+                        content_type: { const: "application/x-www-form-urlencoded" },
+                        body: {
+                          allOf: [
+                            { pattern: `^${OAUTH2_PARAM_PAIR}(?:&${OAUTH2_PARAM_PAIR})*$` },
+                            { pattern: "(?:^|&)grant_type(?:=|&|$)" },
+                            { not: { pattern: "(?:^|&)grant_type=[^&]*\\{\\{" } },
+                            { not: { pattern: `(?:^|&)grant_type=${PASSWORD_FORM_VALUE}(?:&|$)` } },
+                            { not: { pattern: `(?:^|&)(?:${OAUTH2_LOGIN_CONSUMER_PARAMS.join("|")})(?:=|&|$)` } },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     ];
@@ -134,6 +189,8 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
                       anyOf: [
                         { required: ["issuer"] },
                         { required: ["authorization_endpoint", "token_endpoint"] },
+                        // §7.7 — `connect` requires `token_endpoint` (rule above).
+                        { required: ["connect"] },
                       ],
                     },
                   },
@@ -169,6 +226,23 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
                 properties: { issuer: { pattern: "\\{\\$" } },
                 not: { anyOf: DISCOVERED.map((field) => ({ required: [field] })) },
               },
+            },
+          },
+        },
+      },
+    });
+
+    // §7.7 — no oauth2 auth declares `connect` under a `remote` source.
+    schema.allOf.push({
+      if: {
+        properties: { source: { properties: { kind: { const: "remote" } }, required: ["kind"] } },
+        required: ["source"],
+      },
+      then: {
+        properties: {
+          auths: {
+            additionalProperties: {
+              not: { properties: { type: { const: "oauth2" } }, required: ["type", "connect"] },
             },
           },
         },

@@ -970,7 +970,10 @@
             "then": {
               "properties": {
                 "type": {
-                  "const": "custom"
+                  "enum": [
+                    "custom",
+                    "oauth2"
+                  ]
                 },
                 "connect": {
                   "oneOf": [
@@ -1000,6 +1003,137 @@
               "required": [
                 "type"
               ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "oauth2"
+                }
+              },
+              "required": [
+                "type",
+                "connect"
+              ]
+            },
+            "then": {
+              "required": [
+                "token_endpoint",
+                "credentials"
+              ],
+              "not": {
+                "required": [
+                  "scope_catalog"
+                ]
+              },
+              "properties": {
+                "issuer": {
+                  "not": {
+                    "pattern": "\\{\\$"
+                  }
+                },
+                "credentials": {
+                  "required": [
+                    "schema"
+                  ]
+                },
+                "connect": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "tool"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "limits"
+                        ]
+                      }
+                    ]
+                  },
+                  "properties": {
+                    "login": {
+                      "not": {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "outputs"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "success_criteria"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "expires_in_output"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "identity_outputs"
+                            ]
+                          }
+                        ]
+                      },
+                      "properties": {
+                        "request": {
+                          "required": [
+                            "content_type",
+                            "body"
+                          ],
+                          "not": {
+                            "required": [
+                              "headers"
+                            ]
+                          },
+                          "properties": {
+                            "method": {
+                              "const": "POST"
+                            },
+                            "url": {
+                              "not": {
+                                "pattern": "\\{\\{"
+                              }
+                            },
+                            "content_type": {
+                              "const": "application/x-www-form-urlencoded"
+                            },
+                            "body": {
+                              "allOf": [
+                                {
+                                  "pattern": "^[A-Za-z0-9._-]+(?:=[^&]*)?(?:&[A-Za-z0-9._-]+(?:=[^&]*)?)*$"
+                                },
+                                {
+                                  "pattern": "(?:^|&)grant_type(?:=|&|$)"
+                                },
+                                {
+                                  "not": {
+                                    "pattern": "(?:^|&)grant_type=[^&]*\\{\\{"
+                                  }
+                                },
+                                {
+                                  "not": {
+                                    "pattern": "(?:^|&)grant_type=(?:p|%7[00])(?:a|%6[11])(?:s|%7[33])(?:s|%7[33])(?:w|%7[77])(?:o|%6[fF])(?:r|%7[22])(?:d|%6[44])(?:&|$)"
+                                  }
+                                },
+                                {
+                                  "not": {
+                                    "pattern": "(?:^|&)(?:client_id|client_secret|client_assertion|client_assertion_type|resource)(?:=|&|$)"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           },
           {
@@ -1178,6 +1312,11 @@
                           "authorization_endpoint",
                           "token_endpoint"
                         ]
+                      },
+                      {
+                        "required": [
+                          "connect"
+                        ]
                       }
                     ]
                   }
@@ -1261,6 +1400,44 @@
                     }
                   ]
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "properties": {
+              "kind": {
+                "const": "remote"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "then": {
+        "properties": {
+          "auths": {
+            "additionalProperties": {
+              "not": {
+                "properties": {
+                  "type": {
+                    "const": "oauth2"
+                  }
+                },
+                "required": [
+                  "type",
+                  "connect"
+                ]
               }
             }
           }

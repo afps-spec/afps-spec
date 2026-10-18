@@ -351,7 +351,7 @@ Integrations declare one or more auth methods under `auths`, keyed by a short id
 
 OAuth2 is **discovery-first**: given an `issuer`, a consumer fetches the authorization-server metadata document ([RFC 8414] / OpenID Connect Discovery) and uses its `authorization_endpoint`, `token_endpoint`, PKCE methods, and so on. Discovery is best-effort — every endpoint can be supplied manually for providers that publish no discovery document. Scopes are selected from an AFPS `scope_catalog` (with human labels and `implies` relationships), and every method declares a `delivery` (where the credential is injected: HTTP request, environment variable, or file).
 
-Non-OAuth credential acquisition can be described declaratively with a `connect.login` flow, which aligns with the OpenAPI Arazzo request → assert → extract model.
+Non-OAuth credential acquisition can be described declaratively with a `connect.login` flow, which aligns with the OpenAPI Arazzo request → assert → extract model. On an `oauth2` method, `connect.login` instead describes the grant parameters of a token request — for example a refresh token the user obtained elsewhere — so that a provider whose first grant cannot be redirected to the consumer still yields an ordinary, refreshable OAuth connection.
 
 See [spec.md, Section 7](./spec.md#7-integration-authentication).
 
