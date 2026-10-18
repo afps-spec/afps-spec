@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schemas.afps.dev/v0/integration.schema.json",
+  "name": "@example/public-docs",
+  "version": "1.0.0",
+  "type": "integration",
+  "schema_version": "0.3",
+  "display_name": "Public Docs",
+  "description": "A public documentation search server. It answers MCP without any authorization, so the integration declares no auth method: a consumer connects to it without a credential and needs no connection.",
+  "keywords": ["documentation"],
+  "source": {
+    "kind": "remote",
+    "remote": {
+      "url": "https://docs.example.com/mcp",
+      "transport": "streamable-http"
+    }
+  },
+  "allow_undeclared_tools": true,
+  "default_tools": "*"
+}

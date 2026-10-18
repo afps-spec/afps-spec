@@ -291,6 +291,10 @@
                     {
                       "type": "string",
                       "pattern": "^(?:\\{\\$variable\\.[a-z][a-z0-9_]*\\}|https:\\/\\/\\{\\$variable\\.[a-z][a-z0-9_]*\\}(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\\/?$"
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^(?:\\{\\$variable\\.[a-z][a-z0-9_]*\\}|https:\\/\\/\\{\\$variable\\.[a-z][a-z0-9_]*\\}(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?|https:\\/\\/(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)*[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?::[0-9]{1,5})?)(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\\/\\{\\$credential\\.[a-z][a-z0-9_]*\\}(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\\/?$"
                     }
                   ]
                 },
@@ -927,8 +931,7 @@
           }
         },
         "required": [
-          "type",
-          "delivery"
+          "type"
         ],
         "additionalProperties": {},
         "allOf": [
@@ -1260,8 +1263,7 @@
     "name",
     "version",
     "type",
-    "source",
-    "auths"
+    "source"
   ],
   "additionalProperties": {},
   "allOf": [
