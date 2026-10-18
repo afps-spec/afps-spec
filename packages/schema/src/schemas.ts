@@ -55,23 +55,6 @@ export const URL_TEMPLATE_REGEX = new RegExp(
   `^(?:${VARIABLE_PLACEHOLDER}|https:\\/\\/${VARIABLE_PLACEHOLDER}(?:\\.${LABEL})*\\.${LAST_LABEL})(?:\\/${SEGMENT})*\\/?$`,
 );
 
-/** A TCP port, 1 to 65535, without leading zeros. */
-const PORT = "(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])";
-const CREDENTIAL_PLACEHOLDER = `\\{\\$credential\\.${IDENTIFIER_PATTERN}\\}`;
-/** One `{$credential.<field>}` placeholder; group 1 is the field. */
-const CREDENTIAL_REF = new RegExp(`\\{\\$credential\\.(${IDENTIFIER_PATTERN})\\}`, "g");
-
-/**
- * CAPABILITY_URL_REGEX — a capability URL (§7.1, Appendix B): an `https://`
- * URL with a literal host and optional port, or a URL template (§7.12), whose
- * path has exactly one segment that is a whole `{$credential.<field>}`
- * placeholder. The credential never fills the scheme, the authority, a query
- * or a fragment.
- */
-export const CAPABILITY_URL_REGEX = new RegExp(
-  `^(?:${VARIABLE_PLACEHOLDER}|https:\\/\\/${VARIABLE_PLACEHOLDER}(?:\\.${LABEL})*\\.${LAST_LABEL}|https:\\/\\/(?:${LABEL}\\.)*${LAST_LABEL}(?::${PORT})?)(?:\\/${SEGMENT})*\\/${CREDENTIAL_PLACEHOLDER}(?:\\/${SEGMENT})*\\/?$`,
-);
-
 /** Octal file-mode string, e.g. "0400" (§7.6). */
 const FILE_MODE_REGEX = /^0[0-7]{3}$/;
 
@@ -86,24 +69,6 @@ const notTemplated = (value: string) => !value.includes("{$");
 const urlOrVariableTemplate = z.union([
   z.url().refine(notTemplated, { error: URL_TEMPLATE_ERROR }),
   z.string().regex(URL_TEMPLATE_REGEX, { error: URL_TEMPLATE_ERROR }),
-]);
-/**
- * `source.remote.url` (§7.1): a URL, a URL template (§7.12), or a capability
- * URL carrying one `{$credential.<field>}` path segment. That the field is a
- * required string of every auth method's `credentials.schema` is checked by
- * `integrationManifestSchema`.
- */
-const remoteUrl = z.union([
-  ...urlOrVariableTemplate.options,
-  z
-    .string()
-    .regex(CAPABILITY_URL_REGEX, {
-      error: "Must be a URL, a URL template, or a capability URL whose path has one whole {$credential.<field>} segment",
-    })
-    // A literal origin must parse once the credential segment is filled.
-    .refine((value) => value.includes("{$variable.") || URL.canParse(value.replace(CREDENTIAL_REF, "x")), {
-      error: "Must be a valid URL once its {$credential.<field>} segment is filled",
-    }),
 ]);
 /** A URL-valued field that is never templated (§7.3). */
 const literalUrl = z.url().refine(notTemplated, { error: "Must not be templated; only issuer is (§7.3)" });
@@ -372,7 +337,7 @@ const localSource = z.looseObject({
 const remoteSource = z.looseObject({
   kind: z.literal("remote"),
   remote: z.looseObject({
-    url: remoteUrl,
+    url: urlOrVariableTemplate,
     transport: transportEnum,
   }),
 });
@@ -585,9 +550,8 @@ export const authMethod = z.looseObject({
   credentials: credentialsConfig.optional(),
   // connect (§7.7)
   connect: connectSchema.optional(),
-  // delivery (§7.6) — REQUIRED unless `source.remote.url` carries this auth
-  // method's credential (§7.1), checked by `integrationManifestSchema`
-  delivery: deliverySchema.optional(),
+  // delivery (§7.6)
+  delivery: deliverySchema,
   // URI restrictions (§7.9)
   ...uriRestrictionFields,
   // OAuth-client registration hint (§7.10). Auth-method-scoped.
@@ -741,7 +705,6 @@ function refineAuthMethod(
   method: Record<string, unknown>,
   ctx: z.RefinementCtx,
   sourceKind?: unknown,
-  urlCredential?: string,
 ): void {
   const at = ["auths", key];
   const type = method.type;
@@ -814,33 +777,8 @@ function refineAuthMethod(
   }
   if (oauth2Login) refineOauth2Login(at, method, connect!.login as Record<string, unknown>, ctx, sourceKind);
 
-  // §7.1 — a capability URL carries a user-supplied credential: a required
-  // string of credentials.schema, never an oauth2 token nor a connect output.
-  if (urlCredential !== undefined) {
-    const schema = (method.credentials as { schema?: Record<string, unknown> } | undefined)?.schema;
-    const properties = (schema?.properties ?? {}) as Record<string, Record<string, unknown>>;
-    const required = Array.isArray(schema?.required) ? (schema.required as string[]) : [];
-    if (type === "oauth2" || connect !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: at,
-        message: "source.remote.url carries a credential: every auth method is user-supplied (no oauth2, no connect)",
-      });
-    } else if (properties[urlCredential]?.type !== "string" || !required.includes(urlCredential)) {
-      ctx.addIssue({
-        code: "custom",
-        path: [...at, "credentials", "schema"],
-        message: `source.remote.url carries {$credential.${urlCredential}}: credentials.schema MUST declare it as a required string`,
-      });
-    }
-  }
-
-  // §7.6 — a delivery, unless the capability URL is this credential's;
-  // at least one channel; http exclusive of env/files.
+  // §7.6 — at least one delivery channel; http exclusive of env/files.
   const delivery = method.delivery as Record<string, unknown> | undefined;
-  if (!delivery && urlCredential === undefined) {
-    ctx.addIssue({ code: "custom", path: [...at, "delivery"], message: "delivery is required (§7.6)" });
-  }
   if (delivery) {
     const hasHttp = delivery.http !== undefined;
     const hasEnv = delivery.env !== undefined;
@@ -979,10 +917,8 @@ function refineConnectionVariables(
   visit(val.setup_guide, ["setup_guide"]);
 
   // `source.remote.url` and `issuer` templates are the `urlOrVariableTemplate` union's.
-  // A capability URL's credential segment (§7.1) chooses no upstream: only a
-  // variable makes the remote URL per-connection.
   const remoteUrl = source?.kind === "remote" ? source.remote?.url : undefined;
-  const remoteTemplated = variablesIn(remoteUrl).length > 0;
+  const remoteTemplated = isTemplated(remoteUrl);
 
   // A variable renders either as a URL or as host labels, never as both (§7.12).
   const forms = new Map<string, Set<"url" | "host">>();
@@ -1247,8 +1183,7 @@ export function createSchemas(majorVersion: number) {
     })
     .superRefine((val, ctx) => {
       const declared = val.auths as Record<string, Record<string, unknown>> | undefined;
-      const source = val.source as { kind?: unknown; remote?: { url?: unknown } } | undefined;
-      const sourceKind = source?.kind;
+      const sourceKind = (val.source as { kind?: unknown } | undefined)?.kind;
       // §7.2 — `auths`, when present, names at least one method; an absent
       // `auths` declares an unauthenticated integration, which needs a source.
       if (declared !== undefined && Object.keys(declared).length === 0) {
@@ -1280,20 +1215,8 @@ export function createSchemas(majorVersion: number) {
           }
         }
       }
-      // §7.1 — a capability URL carries one credential field, so it needs a
-      // method supplying it.
-      const remoteUrlValue = sourceKind === "remote" ? source?.remote?.url : undefined;
-      const urlCredential =
-        typeof remoteUrlValue === "string" ? [...remoteUrlValue.matchAll(CREDENTIAL_REF)][0]?.[1] : undefined;
-      if (urlCredential !== undefined && declared === undefined) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["auths"],
-          message: `source.remote.url carries {$credential.${urlCredential}}: auths MUST declare a method supplying it`,
-        });
-      }
       for (const [key, method] of Object.entries(auths)) {
-        refineAuthMethod(key, method, ctx, sourceKind, urlCredential);
+        refineAuthMethod(key, method, ctx, sourceKind);
       }
       refineConnectionVariables(val, auths, ctx);
       // `allow_undeclared_tools` requires at least one auth to be

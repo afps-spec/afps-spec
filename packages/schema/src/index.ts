@@ -41,8 +41,6 @@ export {
   variablesConfig,
   VARIABLE_NAME_REGEX,
   URL_TEMPLATE_REGEX,
-  // capability URLs (§7.1)
-  CAPABILITY_URL_REGEX,
   deliverySchema,
   deliveryEncodingEnum,
   connectSchema,

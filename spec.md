@@ -596,7 +596,7 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 
 #### `auths`
 - **Type**: object
-- **Required**: MAY (MUST when `source.kind` is `none` or `source.remote.url` carries a credential, §7.1)
+- **Required**: MAY (MUST when `source.kind` is `none`)
 - **Format**: map keyed by an auth-method key matching `^[a-z][a-z0-9_]*$`; each value is an auth-method object (§7.2). When present, at least one entry is REQUIRED.
 - **Description**: The authentication methods the integration supports. An integration that omits `auths` is unauthenticated (§7.2). See §7 for the full vocabulary.
 - **Example**: `{ "oauth": { "type": "oauth2", "issuer": "https://accounts.google.com", "delivery": { "http": { "in": "header", "name": "Authorization", "prefix": "Bearer ", "value": "{$credential.access_token}" } } } }`
@@ -881,22 +881,10 @@ An integration authenticates the **upstream-credential hop** — the credential 
 ```
 
 - **`local`** — `source.server` references an `mcp-server` package by its AFPS package identity (`name`, a scoped name per §2.2) and a semver `version` range. This is the only source whose referenced server is itself a standalone MCPB-runnable artifact; the integration's authentication layer is applied by the AFPS runtime on top. The optional `vendored` boolean records that the referenced MCP server was vendored into the publishing pipeline at build time (MCPB bundles dependencies into the archive rather than resolving registry references at install time). Build-provenance for a vendored foreign package (for example a [Package URL]) MAY be recorded under `_meta`; it is never the reference mechanism.
-- **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source has no `mcp-server` package and no `.mcpb` form. When the endpoint's location varies per connection (a self-hosted instance, a tenant host), `url` MAY be a URL template over connection variables (§7.12), e.g. `{$variable.base_url}/mcp`. When the endpoint's URL itself is the secret, `url` MAY be a capability URL (below).
+- **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source has no `mcp-server` package and no `.mcpb` form. When the endpoint's location varies per connection (a self-hosted instance, a tenant host), `url` MAY be a URL template over connection variables (§7.12), e.g. `{$variable.base_url}/mcp`.
 - **`none`** — the integration declares no MCP backing. It exposes no MCP-tool catalog of its own; any capabilities it offers come from vendor `_meta` extensions (§10) — for example a runtime that injects credentials into a direct HTTP surface. The `kind` discriminant carries no further spec-defined fields. Vendor extensions are non-normative: a runtime that does not recognise them sees an integration with auth methods and no tools.
 
 A source whose surface is not a local MCP server (`remote`, or `none`) cannot be expressed as an `mcp-server` package and has no `.mcpb` form. This is a property of the source kind, not a runnability gradient.
-
-#### Capability URLs
-
-Some hosted MCP servers authorize a client by the URL alone: each user receives an endpoint whose path holds a secret, and the server sends no authorization challenge ([Capability URLs]). Such a secret is a credential, not part of the package: a manifest is published, shared and logged, and the secret is a user's. `source.remote.url` therefore names it with a placeholder, as a **capability URL** matching `CAPABILITY_URL_REGEX` (Appendix B):
-
-- the URL is an `https://` URL with a literal host (and an optional port from 1 to 65535, without leading zeros) that parses as a [WHATWG URL] once the placeholder is filled, or a URL template of §7.12, whose path holds exactly one segment that is a whole `{$credential.<field>}` placeholder, e.g. `https://mcp.example.com/{$credential.secret}/mcp`. The placeholder never fills the scheme, the authority, part of a segment, a query, or a fragment: the credential never chooses where it is sent, and the [Model Context Protocol authorization model] forbids credentials in the query string;
-- the integration MUST declare `auths`, and every auth method MUST be one whose credential the user supplies — not of `type: "oauth2"` and without `connect` (§7.7) — and MUST declare `<field>` as a property of `credentials.schema` (§7.5) of `type: "string"`, listed in its `required`. Such an auth method MAY omit `delivery` (§7.6): the URL is its delivery. It MAY also declare `delivery.http` for a server that wants the same or another credential in a header;
-- a consumer renders the URL for each connection by substituting the credential's value, percent-encoded as one URI component as ECMAScript `encodeURIComponent` does ([ECMA-262]), so that it stays one segment; a variable of the URL renders first, per §7.12. A value that is empty, `.`, or `..` cannot be rendered: a consumer MUST refuse to create a connection with it, and MUST NOT use such a connection;
-- the rendered URL is a credential (§8.3): a consumer MUST store the value encrypted, MUST NOT include the rendered URL in a manifest, a log entry, an error message, or anything it exposes to an agent, and SHOULD show users the template, or the rendered URL with the secret segment masked. It MUST NOT send the value to any URL but the rendered `source.remote.url`; requests to that URL are authorized by the manifest itself, whatever `authorized_uris` (§7.9) declares;
-- a consumer that does not implement capability URLs MUST treat an integration whose `source.remote.url` carries a `{$credential.<field>}` placeholder as unusable.
-
-Producers SHOULD prefer `delivery.http` when the server also accepts its credential in a header: a URL travels through more logs and histories than a header does.
 
 ### 7.2 Auth Methods
 
@@ -908,7 +896,7 @@ Producers SHOULD prefer `delivery.http` when the server also accepts its credent
 - `mtls` — mutual TLS client authentication. The user-supplied client certificate and private key (and optional intermediate chain) are described by `credentials.schema` (§7.5); they are injected via `delivery.files` (§7.6) at well-known paths the underlying HTTP client loads. Maps to OpenAPI `mutualTLS` (§7.11);
 - `custom` — credentials acquired by a declarative `connect` flow (§7.7) or supplied directly, described by `credentials.schema` (§7.5).
 
-Every auth method MUST declare `delivery` (§7.6) — where its credential is injected at runtime — unless `source.remote.url` carries its credential (§7.1). An auth method MAY declare `authorized_uris` / `allow_all_uris` (§7.9).
+Every auth method MUST declare `delivery` (§7.6) — where its credential is injected at runtime. An auth method MAY declare `authorized_uris` / `allow_all_uris` (§7.9).
 
 #### Unauthenticated integrations
 
@@ -1010,7 +998,7 @@ For auth methods of `type` `api_key`, `basic`, `mtls`, or `custom`, and for an `
 
 ### 7.6 Credential Delivery
 
-`delivery` declares where an acquired credential is injected at runtime. At least one of `{http, env, files}` MUST be declared per auth method that declares `delivery`; an auth method whose credential `source.remote.url` carries (§7.1) MAY omit `delivery`.
+`delivery` declares where an acquired credential is injected at runtime. At least one of `{http, env, files}` MUST be declared per auth method.
 
 The block below is a **syntax catalogue** showing all three delivery shapes; it is NOT a valid single `delivery` object. `http` is mutually exclusive with `env`/`files` (see the rule after this block), so a real auth method declares either `http` alone, or any combination of `env` and `files`.
 
@@ -1356,7 +1344,7 @@ AFPS does not define how server code is loaded or executed beyond delegating to 
 Integration packages (§3.5, §7) describe authentication configurations that involve OAuth tokens, API keys, and other secrets:
 
 - consumers MUST store credentials encrypted at rest;
-- consumers MUST NOT include credentials in manifest files, log entries, or error messages — nor a capability URL (§7.1) rendered with its credential;
+- consumers MUST NOT include credentials in manifest files, log entries, or error messages;
 - consumers SHOULD transmit credentials only over TLS-secured connections;
 - `delivery.env` and `delivery.files` entries marked `sensitive` (or carrying secrets) MUST be handled inside the trusted boundary that performs credential decryption;
 - when `delivery.http` is used (proxy injection), the source server MUST NOT receive the secret unless `allow_server_override` permits it;
@@ -1493,7 +1481,6 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 
 - **[MCP]** Model Context Protocol Specification. https://modelcontextprotocol.io/specification
 - **[Model Context Protocol authorization model]** Model Context Protocol — Authorization. https://modelcontextprotocol.io/specification/draft/basic/authorization
-- **[Capability URLs]** W3C TAG, "Good Practices for Capability URLs", First Public Working Draft, February 2014. https://www.w3.org/TR/capability-urls/
 - **[Client ID Metadata Documents]** OAuth Client ID Metadata Document (CIMD), MCP SEP-991. https://modelcontextprotocol.io/specification/draft/basic/authorization
 - **[Arazzo]** OpenAPI Arazzo Specification (Workflows). https://spec.openapis.org/arazzo/latest.html
 - **[A2A]** Agent-to-Agent Protocol. https://a2a-protocol.org/latest/specification/
@@ -1561,11 +1548,11 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `source.server.version` | integration | string | MUST for `kind=local` | semver range for the referenced `mcp-server` | none |
 | `source.server.vendored` | integration | boolean | MAY | records that the server payload is bundled MCPB-style | `false` |
 | `source.remote` | integration | object | MUST for `kind=remote` | `{ url, transport: streamable-http\|sse }` | none |
-| `source.remote.url` | integration | string | MUST for `kind=remote` | URI of the hosted MCP endpoint, a URL template (§7.12), or a capability URL with one `{$credential.<field>}` path segment (§7.1) | none |
+| `source.remote.url` | integration | string | MUST for `kind=remote` | URI of the hosted MCP endpoint, or a URL template (§7.12) | none |
 | `source.remote.transport` | integration | string | MUST for `kind=remote` | `streamable-http\|sse` | none |
 | `variables` | integration | object | MAY | connection variables (§7.12): `{ schema }` | none |
 | `variables.schema` | integration | object | MUST if `variables` present | self-contained JSON Schema 2020-12; ≥1 property; each a required `string` named per `VARIABLE_NAME_REGEX`; local `$ref` only | none |
-| `auths` | integration | object | MAY (MUST for `kind=none` and for a capability URL) | map keyed by `^[a-z][a-z0-9_]*$`; ≥1 entry when present; absent = unauthenticated (§7.2) | none |
+| `auths` | integration | object | MAY (MUST for `kind=none`) | map keyed by `^[a-z][a-z0-9_]*$`; ≥1 entry when present; absent = unauthenticated (§7.2) | none |
 | `auths.<key>.type` | integration | string | MUST | `oauth2\|api_key\|basic\|mtls\|custom` | none |
 | `auths.<key>.issuer` | integration | string | SHOULD for oauth2 (not required when `source.kind` is `remote` or with `connect.login`) | OAuth/OIDC issuer; enables discovery. For a `remote` source, discovered at connect time from `source.remote.url` (§7.3). MAY be a URL template (§7.12), excluding the endpoints and `resource`; never with `connect.login` (§7.7) | none |
 | `auths.<key>.authorization_endpoint` | integration | string | MUST for oauth2 w/o discovery (not required when `source.kind` is `remote` or with `connect.login`) | RFC 8414 | none |
@@ -1580,7 +1567,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.identity_claims` | integration | object | MAY | AFPS key → JSONPath (singular query) | none |
 | `auths.<key>.required_identity_claims` | integration | string[] | MAY | required OIDC claims | none |
 | `auths.<key>.credentials.schema` | integration | object | MUST for api_key/basic/mtls/custom, and for oauth2 with `connect.login` | self-contained JSON Schema 2020-12; local `$ref` only | none |
-| `auths.<key>.delivery` | integration | object | MUST (MAY when `source.remote.url` carries the credential, §7.1) | ≥1 of `http`, `env`, `files`; `http` exclusive of `env`/`files` | none |
+| `auths.<key>.delivery` | integration | object | MUST | ≥1 of `http`, `env`, `files`; `http` exclusive of `env`/`files` | none |
 | `auths.<key>.delivery.http` | integration | object | MAY | `{ in, name, prefix?, value, encoding?, allow_server_override? }` | none |
 | `auths.<key>.delivery.http.in` | integration | string | MUST if `http` present | `header\|query\|cookie` (OpenAPI) | none |
 | `auths.<key>.delivery.http.name` | integration | string | MUST if `http` present | header/query/cookie parameter name (OpenAPI) | none |
@@ -1638,7 +1625,6 @@ AUTH_KEY_REGEX       = ^[a-z][a-z0-9_]*$
 META_NAMESPACE_KEY   = ^([a-z0-9-]+(\.[a-z0-9-]+)+\/)?[A-Za-z0-9._-]+$
 VARIABLE_NAME_REGEX  = ^[a-z][a-z0-9_]*$
 URL_TEMPLATE_REGEX   = ^(?:\{\$variable\.[a-z][a-z0-9_]*\}|https:\/\/\{\$variable\.[a-z][a-z0-9_]*\}(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?)(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\/?$
-CAPABILITY_URL_REGEX = ^(?:\{\$variable\.[a-z][a-z0-9_]*\}|https:\/\/\{\$variable\.[a-z][a-z0-9_]*\}(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?|https:\/\/(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?)(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\/\{\$credential\.[a-z][a-z0-9_]*\}(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._~!$&'()+,;=:@-]+)*\/?$
 ```
 
 Patterns are ECMA-262 regular expressions, the dialect of JSON Schema `pattern`, and MUST match the whole value. Semantic-version and range validation are delegated to semver parsing functions rather than regexes.

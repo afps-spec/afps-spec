@@ -842,141 +842,73 @@ describe("unauthenticated integration (§7.2)", () => {
   });
 });
 
-describe("capability URL (§7.1)", () => {
-  const keyAuth = (extra: Record<string, unknown> = {}) => ({
+describe("no credential in source.remote.url (§7.1)", () => {
+  // Capability URLs (a `{$credential.<field>}` path segment) were removed in
+  // schema 0.12.0: only a `{$variable.<name>}` template is a valid placeholder.
+  const keyAuth = {
     type: "api_key",
     credentials: {
       schema: { type: "object", properties: { key: { type: "string" } }, required: ["key"] },
     },
-    ...extra,
-  });
-  const capability = (url: string, auths: Record<string, unknown> | null = { url_key: keyAuth() }) => ({
+    delivery: { http: { in: "header", name: "X-Key", value: "{$credential.key}" } },
+  };
+  const remote = (url: string, extra: Record<string, unknown> = {}) => ({
     name: "@test/personal-server",
     version: "1.0.0",
     type: "integration",
     schema_version: "0.3",
     display_name: "Personal server",
     source: { kind: "remote", remote: { url, transport: "streamable-http" } },
-    ...(auths === null ? {} : { auths }),
+    auths: { url_key: keyAuth },
+    ...extra,
+  });
+  const baseUrlVariable = {
+    variables: {
+      schema: { type: "object", properties: { base_url: { type: "string" } }, required: ["base_url"] },
+    },
+  };
+
+  test("a {$credential.<field>} path segment is invalid under Zod and JSON Schema", () => {
+    for (const url of [
+      "https://mcp.example.com/{$credential.key}/mcp",
+      "https://mcp.example.com:8443/s/{$credential.key}",
+      "https://mcp.example.com/mcp?key={$credential.key}",
+      "https://{$credential.key}.example.com/mcp",
+      "{$credential.key}/mcp",
+    ]) {
+      expectBoth(false, remote(url));
+    }
   });
 
-  test("one whole path segment may be a credential; the auth needs no delivery", () => {
-    expectValid(integrationManifestSchema, capability("https://mcp.example.com/{$credential.key}/mcp"));
-    expectValid(integrationManifestSchema, capability("https://mcp.example.com:8443/s/{$credential.key}"));
+  test("a credential segment stays invalid inside a URL template (§7.12)", () => {
+    expectBoth(false, remote("{$variable.base_url}/{$credential.key}/mcp", baseUrlVariable));
   });
 
-  test("a capability URL may also be a URL template (§7.12)", () => {
-    expectValid(integrationManifestSchema, {
-      ...capability("{$variable.base_url}/{$credential.key}/mcp"),
+  test("a {$variable.<name>} template stays valid under Zod and JSON Schema (§7.12)", () => {
+    expectBoth(true, remote("{$variable.base_url}/mcp", baseUrlVariable));
+    expectBoth(true, remote("{$variable.base_url}/api/v4/mcp", baseUrlVariable));
+    expectBoth(true, {
+      ...remote("https://{$variable.tenant}.example.com/mcp"),
       variables: {
-        schema: { type: "object", properties: { base_url: { type: "string" } }, required: ["base_url"] },
+        schema: { type: "object", properties: { tenant: { type: "string" } }, required: ["tenant"] },
       },
     });
   });
 
-  test("an auth may still deliver the same credential over http", () => {
-    expectValid(
-      integrationManifestSchema,
-      capability("https://mcp.example.com/{$credential.key}/mcp", {
-        url_key: keyAuth({
-          delivery: { http: { in: "header", name: "X-Key", value: "{$credential.key}" } },
-          authorized_uris: ["https://mcp.example.com/**"],
-        }),
-      }),
-    );
+  test("an unauthenticated integration cannot carry one either", () => {
+    const { auths: _auths, ...unauthenticated } = remote("https://mcp.example.com/{$credential.key}/mcp");
+    expectBoth(false, unauthenticated);
   });
 
-  test("the credential never fills the authority, a query, a partial segment, or two segments", () => {
-    for (const url of [
-      "https://{$credential.key}.example.com/mcp",
-      "https://mcp.example.com/mcp?key={$credential.key}",
-      "https://mcp.example.com/mcp#{$credential.key}",
-      "https://mcp.example.com/k-{$credential.key}/mcp",
-      "https://mcp.example.com/{$credential.key}/{$credential.key}",
-      "{$credential.key}/mcp",
-    ]) {
-      expectInvalid(integrationManifestSchema, capability(url));
-    }
+  test("every auth method declares a delivery again", () => {
+    const { delivery: _delivery, ...noDelivery } = keyAuth;
+    expectBoth(false, remote("https://mcp.example.com/mcp", { auths: { url_key: noDelivery } }));
+    expectBoth(true, remote("https://mcp.example.com/mcp"));
   });
 
-  test("a capability URL is https", () => {
-    expectInvalid(integrationManifestSchema, capability("http://mcp.example.com/{$credential.key}/mcp"));
-  });
-
-  test("the URL's credential needs a declared auth supplying it", () => {
-    expectInvalid(integrationManifestSchema, capability("https://mcp.example.com/{$credential.key}/mcp", null));
-  });
-
-  test("every auth method lists the field as a required string", () => {
-    const url = "https://mcp.example.com/{$credential.key}/mcp";
-    expectInvalid(
-      integrationManifestSchema,
-      capability(url, {
-        url_key: {
-          ...keyAuth(),
-          credentials: { schema: { type: "object", properties: { key: { type: "string" } } } },
-        },
-      }),
-    );
-    expectInvalid(
-      integrationManifestSchema,
-      capability(url, {
-        url_key: {
-          ...keyAuth(),
-          credentials: { schema: { type: "object", properties: { key: { type: "number" } }, required: ["key"] } },
-        },
-      }),
-    );
-    expectInvalid(
-      integrationManifestSchema,
-      capability(url, {
-        url_key: keyAuth(),
-        other: {
-          type: "api_key",
-          credentials: { schema: { type: "object", properties: { token: { type: "string" } }, required: ["token"] } },
-          delivery: { http: { in: "header", name: "Authorization", value: "{$credential.token}" } },
-        },
-      }),
-    );
-  });
-
-  test("a literal port is 1 to 65535 and the filled URL parses", () => {
-    expectBoth(true, capability("https://mcp.example.com:65535/{$credential.key}"));
-    for (const port of ["99999", "65536", "0", "08443"]) {
-      expectBoth(false, capability(`https://mcp.example.com:${port}/{$credential.key}`));
-    }
-  });
-
-  test("the generated JSON Schema agrees with Zod", () => {
-    const url = "https://mcp.example.com/{$credential.key}/mcp";
-    const bearer = { http: { in: "header", name: "Authorization", value: "{$credential.key}" } };
-    expectBoth(true, capability(url));
-    expectBoth(false, capability(url, null));
-    expectBoth(false, capability(url, { oauth: { ...keyAuth(), type: "oauth2", delivery: bearer } }));
-    expectBoth(false, capability(url, { flow: { ...keyAuth(), type: "custom", connect: { tool: { name: "get_token" } } } }));
-    // Outside a capability URL, every auth method still declares a delivery.
-    expectBoth(false, capability("https://mcp.example.com/mcp"));
-    expectBoth(true, capability("https://mcp.example.com/mcp", { url_key: keyAuth({ delivery: bearer }) }));
-  });
-
-  test("CAPABILITY_URL_REGEX is exported from the package entry", async () => {
-    const entry = await import("@afps-spec/schema");
-    expect(entry.CAPABILITY_URL_REGEX.test("https://mcp.example.com/{$credential.key}/mcp")).toBe(true);
-  });
-
-  test("an issued credential cannot sit in the URL", () => {
-    const url = "https://mcp.example.com/{$credential.access_token}/mcp";
-    expectInvalid(
-      integrationManifestSchema,
-      capability(url, {
-        oauth: {
-          type: "oauth2",
-          credentials: {
-            schema: { type: "object", properties: { access_token: { type: "string" } }, required: ["access_token"] },
-          },
-        },
-      }),
-    );
+  test("CAPABILITY_URL_REGEX is no longer exported", async () => {
+    const entry: Record<string, unknown> = await import("@afps-spec/schema");
+    expect(entry.CAPABILITY_URL_REGEX).toBeUndefined();
   });
 });
 
@@ -1004,7 +936,7 @@ describe("integration auth methods (§7.2 – §7.5)", () => {
     expectInvalid(integrationManifestSchema, noAuths);
   });
 
-  test("delivery is required outside a capability URL (§7.6)", () => {
+  test("delivery is required (§7.6)", () => {
     expectInvalid(
       integrationManifestSchema,
       withAuth({
