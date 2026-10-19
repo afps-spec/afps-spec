@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+Editorial; no normative change.
+
+- Definitions of an integration (§1, §2, §3.5, primer) read "a binding to an
+  external service, optionally credentialed", matching unauthenticated
+  integrations (§7.2).
+- `integration.schema.json` description: authentication methods are optional.
+- Conformance tests: retired-export assertion dropped, rules worded in the
+  present tense.
+- IMPLEMENTATIONS.md: the Appstrate implementation refuses `variables` on an
+  unauthenticated integration.
+
 ## Schema `@afps-spec/schema@0.12.0` — 2026-10-19
 
 Validates the §7.1 revision below. Capability URLs are removed: a manifest

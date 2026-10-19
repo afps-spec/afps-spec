@@ -330,7 +330,7 @@ const entries = [
     title: "AFPS Integration Manifest",
     description:
       "Manifest schema for AFPS 0.3 integration packages. " +
-      "An integration declares a capability source, one or more authentication methods, and credential delivery.",
+      "An integration declares a capability source, optional authentication methods (§7.2), and credential delivery.",
     schema: integrationManifestSchema,
   },
 ];
