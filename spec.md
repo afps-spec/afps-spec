@@ -98,7 +98,7 @@ Agent Format Packaging Standard (AFPS) defines a declarative package format for 
 
 The central artifact in AFPS is the **agent** — a package that captures the user's intent (via a `prompt.md` companion file) together with everything the agent needs to fulfill it: skills, MCP servers, integration connections, input and output schemas, and execution settings. An agent execution is **non-interactive and run-to-completion**: the agent receives the objective, the input data, and the available resources, processes the task autonomously, and returns a structured result. There is no conversational back-and-forth — the agent runs from start to finish without user interaction. Where other standards define agent capabilities (what an agent *can do*), an AFPS agent defines an objective (what the agent *should accomplish*).
 
-AFPS also defines three supporting package types — **skills** (reusable instructions), **MCP servers** (runnable tool servers, packaged as MCP Bundles), and **integrations** (credentialed bindings to external services) — that agents compose as dependencies.
+AFPS also defines three supporting package types — **skills** (reusable instructions), **MCP servers** (runnable tool servers, packaged as MCP Bundles), and **integrations** (bindings to external services, optionally credentialed) — that agents compose as dependencies.
 
 The goal of AFPS is to let producers publish portable artifacts that describe:
 
@@ -194,7 +194,7 @@ Packaging    AFPS                                 "how it is all declared and di
 - **Companion file**: a required non-manifest file such as `prompt.md`, `SKILL.md`, or an MCP server entry point.
 - **Dependency**: an entry under `dependencies`, declaring a package that this package depends on, with a semver version range.
 - **MCP server**: a package whose manifest is AFPS-native at the root and adopts the MCP Bundle (MCPB) field vocabulary to describe how to run a local MCP tool server (§3.4).
-- **Integration**: a package describing a credentialed binding to an external service — its capability source, authentication method(s), and credential delivery (§3.5, §7).
+- **Integration**: a package describing a binding to an external service, optionally credentialed — its capability source, any authentication methods, and credential delivery (§3.5, §7).
 - **Capability source**: the surface an integration binds to — a local MCP server, a remote MCP endpoint, or an HTTP API (§7.1).
 - **Auth method**: a named authentication configuration under an integration's `auths` map (§7.2). This document uses "auth method" and "authentication method" interchangeably.
 - **Delivery**: the declaration of where an acquired credential is injected at runtime — HTTP request, environment variable, or file (§7.6). The runtime act of placing the credential is referred to as *injection*; "credential delivery" and "delivery" denote the same declaration.
@@ -214,7 +214,7 @@ AFPS defines four package types:
 - `agent`: a complete workflow package consisting of manifest metadata and a `prompt.md` companion file;
 - `skill`: a declarative capability package consisting of a minimal manifest and `SKILL.md`;
 - `mcp-server`: a runnable MCP tool server, whose manifest adopts the MCP Bundle (MCPB) vocabulary at the root for the server, tools, and user-configuration fields, alongside the standard AFPS common fields (§3.4);
-- `integration`: a credentialed binding to an external service, described entirely by `manifest.json` (§3.5).
+- `integration`: a binding to an external service, optionally credentialed, described entirely by `manifest.json` (§3.5).
 
 A package's `type` field is the dispatch key used by validators and archive parsers. Producers MUST set it to exactly one of the values above.
 

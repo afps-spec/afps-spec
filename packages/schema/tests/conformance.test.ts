@@ -843,8 +843,8 @@ describe("unauthenticated integration (§7.2)", () => {
 });
 
 describe("no credential in source.remote.url (§7.1)", () => {
-  // Capability URLs (a `{$credential.<field>}` path segment) were removed in
-  // schema 0.12.0: only a `{$variable.<name>}` template is a valid placeholder.
+  // `source.remote.url` carries no `{$credential.<field>}` placeholder: only a
+  // `{$variable.<name>}` template is a valid placeholder.
   const keyAuth = {
     type: "api_key",
     credentials: {
@@ -880,11 +880,11 @@ describe("no credential in source.remote.url (§7.1)", () => {
     }
   });
 
-  test("a credential segment stays invalid inside a URL template (§7.12)", () => {
+  test("a credential segment is invalid inside a URL template (§7.12)", () => {
     expectBoth(false, remote("{$variable.base_url}/{$credential.key}/mcp", baseUrlVariable));
   });
 
-  test("a {$variable.<name>} template stays valid under Zod and JSON Schema (§7.12)", () => {
+  test("a {$variable.<name>} template is valid under Zod and JSON Schema (§7.12)", () => {
     expectBoth(true, remote("{$variable.base_url}/mcp", baseUrlVariable));
     expectBoth(true, remote("{$variable.base_url}/api/v4/mcp", baseUrlVariable));
     expectBoth(true, {
@@ -900,15 +900,10 @@ describe("no credential in source.remote.url (§7.1)", () => {
     expectBoth(false, unauthenticated);
   });
 
-  test("every auth method declares a delivery again", () => {
+  test("every auth method declares a delivery", () => {
     const { delivery: _delivery, ...noDelivery } = keyAuth;
     expectBoth(false, remote("https://mcp.example.com/mcp", { auths: { url_key: noDelivery } }));
     expectBoth(true, remote("https://mcp.example.com/mcp"));
-  });
-
-  test("CAPABILITY_URL_REGEX is no longer exported", async () => {
-    const entry: Record<string, unknown> = await import("@afps-spec/schema");
-    expect(entry.CAPABILITY_URL_REGEX).toBeUndefined();
   });
 });
 
