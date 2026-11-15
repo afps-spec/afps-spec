@@ -866,7 +866,7 @@ A `local` integration maps mechanically to a strict MCP Bundle ([MCPB]) and back
 - `manifest_version` is `"0.3"`, or `"0.4"` when `source.server.type` is `uv`;
 - `name` is the integration `name` without its scope; `display_name`, `version`, `description`, `license`, `keywords`, `icon` (when present) and `author` (as `{ "name": … }`) are copied from the integration manifest;
 - `server` is `source.server` without `tools`; `tools` is `source.server.tools` when present;
-- each `delivery.env` entry of the auth method being exported becomes a `user_config` entry `{ "type": "string", "sensitive": <copied>, "required": true }`, whose `title` is the `title` of the credential field's schema when the entry's `value` template is exactly one `{$credential.<field>}` reference, and the entry is injected into `server.mcp_config.env` as `"${user_config.<VAR>}"`, `<VAR>` being the environment-variable name;
+- each `delivery.env` entry of the auth method being exported is written into `server.mcp_config.env` under its environment-variable name, with every `{$credential.<field>}` reference in its `value` replaced by `${user_config.<field>}`; each credential field so referenced becomes one `user_config` entry `{ "type": "string", "required": true }` keyed by the field name, whose `title` and `description` are those of the field's schema property (the field name when absent) and which is `sensitive` when any entry referencing it is. A credential delivered to several variables is therefore asked for once;
 - payload files are copied verbatim.
 
 An integration whose auth method uses `delivery.http` or `delivery.files`, or that declares more than one auth method, has no faithful MCPB form: a consumer MUST refuse the export rather than drop the credential.
