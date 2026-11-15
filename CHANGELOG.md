@@ -2,17 +2,6 @@
 
 ## [Unreleased]
 
-Editorial; no normative change.
-
-- Definitions of an integration (§1, §2, §3.5, primer) read "a binding to an
-  external service, optionally credentialed", matching unauthenticated
-  integrations (§7.2).
-- `integration.schema.json` description: authentication methods are optional.
-- Conformance tests: retired-export assertion dropped, rules worded in the
-  present tense.
-- IMPLEMENTATIONS.md: the Appstrate implementation refuses `variables` on an
-  unauthenticated integration.
-
 ## Schema `@afps-spec/schema@0.13.0` — 2026-11-15
 
 Validates the 2026-11-15 revision below. Breaking, as `0.x` allows: the
@@ -33,7 +22,8 @@ its server inline.
 - `v0/mcp-server.schema.json` is no longer generated (and is deleted).
 - Examples: `mcp-server-minimal` removed; `integration-local-mcp` carries the
   server payload and declares it inline.
-- `@afps-spec/types`: `McpServerRef` removed.
+- `@afps-spec/types`: `McpServerRef` removed (package bumped to 0.2.0).
+- `integration.schema.json` description: authentication methods are optional.
 
 ## Spec 0.3 revision — 2026-11-15 (`mcp-server` folded into `local` integrations)
 
@@ -72,13 +62,42 @@ Normative change to the 0.3 draft (no spec-version bump). Validate with
 
 - §7.1.1 MCPB Interoperability (Projection): a `local` integration exports to a
   strict MCP Bundle (`manifest_version` `0.3`, or `0.4` for `uv`; each
-  `delivery.env` entry becomes a `user_config` entry injected into
-  `mcp_config.env`) and a `.mcpb` imports to an integration (sensitive
-  `user_config` entries become one `custom` auth method's credentials and
-  `delivery.env`; non-sensitive entries are inlined from their `default`, or
-  the import fails). An integration using `delivery.http`, `delivery.files`,
-  or several auth methods has no faithful MCPB form and a consumer MUST refuse
-  the export.
+  `delivery.env` entry becomes `mcp_config.env`, each credential field it
+  references one `user_config` entry that is always `sensitive` and `required`)
+  and a `.mcpb` imports to an integration (sensitive `user_config` entries become
+  one `custom` auth method's credentials and `delivery.env`, with
+  `allow_all_uris: true` that an author SHOULD narrow; non-sensitive defaults are
+  inlined in `command`, `args` and `env`, platform overrides included). An
+  integration declaring `variables`, several auth methods, `delivery.http` or
+  `delivery.files` has no faithful MCPB form and a consumer MUST refuse the
+  export. An import MUST be refused when a sensitive entry is referenced
+  anywhere but an `env` value of the top-level `mcp_config`, an entry is
+  `multiple`, a sensitive entry is not a `string` or its key is outside
+  `[A-Za-z0-9_]`, a reference names an undeclared entry, an `env` value is not a
+  string or keeps a `${…}` placeholder after inlining, or
+  `compatibility.platforms` names no platform the runtime can run. The reader accepts any
+  `manifest_version`; the writer emits only `0.3` or `0.4`.
+
+### Clarified
+
+- §7.1 / §7.1.1: a runtime launches a `local` server from `type` and
+  `entry_point` alone. `mcp_config.command`, `args` and `platform_overrides` are
+  informative (carried for MCPB interoperability, not executed);
+  `mcp_config.env` values are literal strings merged beneath `delivery.env`,
+  and no placeholder is expanded in them.
+- §7.1.1: export builds `server` and `author` by picking fields (an object
+  `author` is copied, a string becomes `{ name }`, the scope fallback has no
+  `@`); `compatibility` is dropped on import.
+
+### Editorial
+
+- Definitions of an integration (§1, §2, §3.4, primer) read "a binding to an
+  external service, optionally credentialed", matching unauthenticated
+  integrations (§7.2).
+- Conformance tests: retired-export assertion dropped, rules worded in the
+  present tense.
+- IMPLEMENTATIONS.md: the Appstrate implementation refuses `variables` on an
+  unauthenticated integration.
 
 ## Schema `@afps-spec/schema@0.12.0` — 2026-10-19
 
