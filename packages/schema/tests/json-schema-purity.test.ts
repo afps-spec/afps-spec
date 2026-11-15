@@ -163,11 +163,8 @@ describe("cross-field MUST rules injected into JSON Schema (lockstep with Zod su
   const integ = JSON.parse(
     readFileSync(join(import.meta.dir, "../v0/integration.schema.json"), "utf-8"),
   );
-  const mcp = JSON.parse(
-    readFileSync(join(import.meta.dir, "../v0/mcp-server.schema.json"), "utf-8"),
-  );
 
-  test("§3.5 — auths requires at least one entry (minProperties)", () => {
+  test("§3.4 — auths requires at least one entry (minProperties)", () => {
     expect(integ.properties.auths.minProperties).toBe(1);
   });
 
@@ -219,12 +216,6 @@ describe("cross-field MUST rules injected into JSON Schema (lockstep with Zod su
     expect(rule?.if?.required).toEqual(["default_tools"]);
     expect(rule?.then?.properties?.allow_undeclared_tools?.const).toBe(true);
     expect(rule?.then?.required).toEqual(["allow_undeclared_tools"]);
-  });
-
-  test("§3.4 — server.type uv requires manifest_version 0.4", () => {
-    const rule = mcp.allOf?.[0];
-    expect(rule?.if?.properties?.server?.properties?.type?.const).toBe("uv");
-    expect(rule?.then?.properties?.manifest_version?.const).toBe("0.4");
   });
 });
 

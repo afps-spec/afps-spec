@@ -2,13 +2,12 @@
 // Copyright (c) 2026 AFPS contributors
 
 /**
- * AFPS 0.3 — Zod schemas for the four package types.
+ * AFPS 0.3 — Zod schemas for the three package types.
  *
- * AFPS 0.3 uses a snake_case field vocabulary and defines four package types:
+ * AFPS 0.3 uses a snake_case field vocabulary and defines three package types:
  *   - agent       (§3.2)
  *   - skill        (§3.3)
- *   - mcp-server   (§3.4) — AFPS-native at root, adopts MCPB vocabulary for server/tools/user_config
- *   - integration  (§3.5 + §7)
+ *   - integration  (§3.4 + §7) — a `local` source declares its server inline (MCPB vocabulary)
  *
  * These schemas define ONLY the fields in the AFPS specification. Vendor
  * extension data lives under `_meta` (§10). All top-level objects are
@@ -78,8 +77,8 @@ export const scopedName = z.string().regex(SCOPED_NAME_REGEX, {
   error: "Must follow @scope/name format",
 });
 
-/** The four AFPS 0.3 package types (§2.1). `tool` and `provider` are removed. */
-export const packageTypeEnum = z.enum(["agent", "skill", "mcp-server", "integration"]);
+/** The three AFPS 0.3 package types (§2.1). `tool`, `provider` and `mcp-server` are removed. */
+export const packageTypeEnum = z.enum(["agent", "skill", "integration"]);
 
 const semverVersion = z.string().refine((v) => semver.valid(v) !== null, {
   error: "Must be a valid semver version (e.g. 1.0.0)",
@@ -197,7 +196,7 @@ export const schemaWrapper = z.object({
 
 /**
  * A dependency entry: a semver range string (§4.1). Every value in the
- * `dependencies.{skills,mcp_servers,integrations}` maps is a bare semver
+ * `dependencies.{skills,integrations}` maps is a bare semver
  * range — the maps declare *which* packages and at *what* versions, nothing
  * more. Per-integration agent configuration (`tools`/`scopes`/`auth_key`/`required`)
  * lives in the top-level `integrations_configuration` block (§4.4).
@@ -205,7 +204,6 @@ export const schemaWrapper = z.object({
 export const dependenciesSchema = z
   .looseObject({
     skills: z.record(scopedName, semverRange).optional(),
-    mcp_servers: z.record(scopedName, semverRange).optional(),
     integrations: z.record(scopedName, semverRange).optional(),
   })
   .optional();
@@ -275,13 +273,13 @@ export function refineIntegrationsConfiguration(
 }
 
 // ─────────────────────────────────────────────
-// MCP-server: MCPB-vocabulary shapes (§3.4)
+// Local server: inline run declaration, MCPB vocabulary (§7.1)
 // ─────────────────────────────────────────────
 
-/** Server runtime type. `uv` requires manifest_version 0.4 (§3.4). */
-export const mcpServerTypeEnum = z.enum(["node", "python", "binary", "uv"]);
+/** `source.server.type` — MCPB server runtime type (§7.1). */
+export const localServerTypeEnum = z.enum(["node", "python", "binary", "uv"]);
 
-/** `server.mcp_config` (MCPB vocabulary). */
+/** `source.server.mcp_config` (MCPB vocabulary). `env` holds literal values only (§7.1). */
 const mcpConfig = z.looseObject({
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
@@ -289,33 +287,18 @@ const mcpConfig = z.looseObject({
   platform_overrides: z.record(z.string(), z.unknown()).optional(),
 });
 
-const mcpServerRun = z.looseObject({
-  type: mcpServerTypeEnum,
-  entry_point: z.string().min(1),
-  mcp_config: mcpConfig,
-});
-
-/**
- * One MCPB `user_config` entry (§3.4). MCPB vocabulary; `looseObject` keeps the
- * schema forward-compatible with future MCPB additions. `type` is the required
- * discriminant; `sensitive` is the flag the §7.6 `env.user_config_key` binding
- * relies on.
- */
-const userConfigEntry = z.looseObject({
-  type: z.enum(["string", "number", "boolean", "directory", "file"]),
-  title: z.string().min(1).optional(),
-  description: z.string().optional(),
-  required: z.boolean().optional(),
-  default: z.unknown().optional(),
-  multiple: z.boolean().optional(),
-  sensitive: z.boolean().optional(),
-  min: z.number().optional(),
-  max: z.number().optional(),
-});
-
-const mcpServerToolEntry = z.looseObject({
+/** One advisory `source.server.tools[]` entry (MCPB vocabulary, §7.1). */
+const localServerToolEntry = z.looseObject({
   name: z.string().min(1),
   description: z.string().optional(),
+});
+
+/** `source.server` of a `local` source: the inline run declaration (§7.1). */
+const localServer = z.looseObject({
+  type: localServerTypeEnum,
+  entry_point: z.string().min(1),
+  mcp_config: mcpConfig,
+  tools: z.array(localServerToolEntry).optional(),
 });
 
 // ─────────────────────────────────────────────
@@ -327,11 +310,7 @@ export const transportEnum = z.enum(["streamable-http", "sse"]);
 
 const localSource = z.looseObject({
   kind: z.literal("local"),
-  server: z.looseObject({
-    name: scopedName,
-    version: semverRange,
-    vendored: z.boolean().optional(),
-  }),
+  server: localServer,
 });
 
 const remoteSource = z.looseObject({
@@ -418,9 +397,6 @@ const httpDelivery = z.looseObject({
 const envDeliveryEntry = z.looseObject({
   value: z.string().min(1),
   sensitive: z.boolean().optional(),
-  // MCPB user_config key for local-source binding (§7.6). Defaults to the
-  // env-variable name (the map key) when omitted.
-  user_config_key: z.string().min(1).optional(),
 });
 
 const fileDeliveryEntry = z.looseObject({
@@ -1109,35 +1085,7 @@ export function createSchemas(majorVersion: number) {
     type: z.literal("skill"),
   });
 
-  // ── MCP-server (§3.4) — AFPS-native at root + embedded MCPB vocabulary. ──
-  const mcpServerManifestSchema = z
-    .looseObject({
-      ...commonFields,
-      type: z.literal("mcp-server"),
-      // §3.4 + Appendix A: `manifest_version` follows MCPB `MAJOR.MINOR` format.
-      // The format is enforced; the recommended enum (`0.3` baseline, `0.4`
-      // when server.type === "uv") is NOT enforced as a hard constraint so
-      // future MCPB minor revisions are forward-compatible. The
-      // `uv` ⇒ `0.4` cross-field rule is enforced in the `superRefine` below.
-      manifest_version: z.string().regex(/^\d+\.\d+$/, {
-        error: "manifest_version must follow MAJOR.MINOR format (e.g. \"0.3\", \"0.4\")",
-      }),
-      server: mcpServerRun,
-      tools: z.array(mcpServerToolEntry).optional(),
-      user_config: z.record(z.string(), userConfigEntry).optional(),
-    })
-    .superRefine((val, ctx) => {
-      // uv server type requires manifest_version 0.4 (§3.4).
-      if (val.server?.type === "uv" && val.manifest_version === "0.3") {
-        ctx.addIssue({
-          code: "custom",
-          path: ["server", "type"],
-          message: 'server.type "uv" requires manifest_version "0.4" or later',
-        });
-      }
-    });
-
-  // ── Integration (§3.5 + §7) ──
+  // ── Integration (§3.4 + §7) ──
   const integrationManifestSchema = z
     .looseObject({
       ...commonFields,
@@ -1151,9 +1099,9 @@ export function createSchemas(majorVersion: number) {
       // carries `required_scopes` (keyed by auth key)
       // per tool that needs them. It is NOT the catalog of "tools this
       // integration exposes": the catalog comes from the referenced
-      // mcp-server's `tools[]` (local source) or the integration's
+      // `source.server.tools[]` (local source) or the integration's
       // declared tools (remote/api sources). The `_policy` suffix
-      // disambiguates this field from `mcp-server.tools`. An author opts
+      // disambiguates this field from `source.server.tools`. An author opts
       // a tool OUT of the agent-facing surface via `hidden_tools` below.
       tools_policy: z.record(z.string(), integrationToolMeta).optional(),
       // Explicit opt-out: tool names that exist in the resolved catalog
@@ -1260,7 +1208,6 @@ export function createSchemas(majorVersion: number) {
     agentManifestSchema,
     agentManifestObjectSchema,
     skillManifestSchema,
-    mcpServerManifestSchema,
     integrationManifestSchema,
   };
 }
@@ -1274,7 +1221,6 @@ const draft = createSchemas(0);
 export const agentManifestSchema = draft.agentManifestSchema;
 export const agentManifestObjectSchema = draft.agentManifestObjectSchema;
 export const skillManifestSchema = draft.skillManifestSchema;
-export const mcpServerManifestSchema = draft.mcpServerManifestSchema;
 export const integrationManifestSchema = draft.integrationManifestSchema;
 
 // ─────────────────────────────────────────────
@@ -1283,7 +1229,6 @@ export const integrationManifestSchema = draft.integrationManifestSchema;
 
 export type AgentManifest = z.infer<typeof agentManifestSchema>;
 export type SkillManifest = z.infer<typeof skillManifestSchema>;
-export type McpServerManifest = z.infer<typeof mcpServerManifestSchema>;
 export type IntegrationManifest = z.infer<typeof integrationManifestSchema>;
 
 export type PackageType = z.infer<typeof packageTypeEnum>;

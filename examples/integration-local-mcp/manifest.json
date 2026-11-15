@@ -5,13 +5,28 @@
   "type": "integration",
   "schema_version": "0.3",
   "display_name": "Fetch JSON (authenticated)",
-  "description": "Credentialed binding over the @example/fetch-json MCP server: the integration applies an API key on top of the local server via environment-variable delivery.",
-  "keywords": ["http", "api"],
+  "description": "Local MCP server declared inline and shipped in the archive; the integration applies an API key to the server process through environment-variable delivery.",
+  "keywords": [
+    "http",
+    "api"
+  ],
   "source": {
     "kind": "local",
     "server": {
-      "name": "@example/fetch-json",
-      "version": "^1.0.0"
+      "type": "node",
+      "entry_point": "server/index.js",
+      "mcp_config": {
+        "command": "node",
+        "args": [
+          "${__dirname}/server/index.js"
+        ]
+      },
+      "tools": [
+        {
+          "name": "fetch_json",
+          "description": "Fetch JSON from a URL and return the parsed response."
+        }
+      ]
     }
   },
   "auths": {
@@ -26,19 +41,22 @@
               "description": "Upstream API key"
             }
           },
-          "required": ["api_key"]
+          "required": [
+            "api_key"
+          ]
         }
       },
       "delivery": {
         "env": {
           "FETCH_JSON_API_KEY": {
             "value": "{$credential.api_key}",
-            "sensitive": true,
-            "user_config_key": "api_key"
+            "sensitive": true
           }
         }
       }
     }
   },
-  "default_tools": ["fetch_json"]
+  "default_tools": [
+    "fetch_json"
+  ]
 }

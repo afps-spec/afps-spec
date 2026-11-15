@@ -14,14 +14,12 @@ import { join } from "node:path";
 import {
   agentManifestSchema,
   skillManifestSchema,
-  mcpServerManifestSchema,
   integrationManifestSchema,
 } from "../src/schemas.ts";
 
 const schemaByType: Record<string, { safeParse: (v: unknown) => { success: boolean; error?: unknown } }> = {
   agent: agentManifestSchema,
   skill: skillManifestSchema,
-  "mcp-server": mcpServerManifestSchema,
   integration: integrationManifestSchema,
 };
 

@@ -14,11 +14,9 @@
     "skills": {
       "@example/rewrite-tone": "^1.0.0"
     },
-    "mcp_servers": {
-      "@example/fetch-json": "^1.0.0"
-    },
     "integrations": {
-      "@example/gmail": "^1.0.0"
+      "@example/gmail": "^1.0.0",
+      "@example/fetch-json-authenticated": "^1.0.0"
     }
   },
   "integrations_configuration": {

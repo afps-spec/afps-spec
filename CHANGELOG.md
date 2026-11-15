@@ -2,12 +2,98 @@
 
 ## [Unreleased]
 
-Editorial; no normative change.
+## Schema `@afps-spec/schema@0.13.0` — 2026-11-15
 
-- Definitions of an integration (§1, §2, §3.5, primer) read "a binding to an
+Validates the 2026-11-15 revision below. Breaking, as `0.x` allows: the
+`mcp-server` package type is gone, and a `local` integration source declares
+its server inline.
+
+- `source.server` of a `local` source is the run declaration `{ type,
+  entry_point, mcp_config, tools? }` (MCPB vocabulary). The reference shape
+  `{ name, version, vendored? }` no longer validates.
+- `mcp-server` is removed from `packageTypeEnum`; `mcpServerManifestSchema`,
+  the `McpServerManifest` type, `mcpServerTypeEnum` and the internal
+  `userConfigEntry` are deleted. `localServerTypeEnum` (`node | python |
+  binary | uv`) replaces `mcpServerTypeEnum`.
+- `dependencies.mcp_servers` and `auths.<key>.delivery.env.<var>.user_config_key`
+  are no longer declared. Objects stay `looseObject`, so a manifest that still
+  carries either key is not rejected for it: the key is an unknown field that
+  round-trips.
+- `v0/mcp-server.schema.json` is no longer generated (and is deleted).
+- Examples: `mcp-server-minimal` removed; `integration-local-mcp` carries the
+  server payload and declares it inline.
+- `@afps-spec/types`: `McpServerRef` removed (package bumped to 0.2.0).
+- `integration.schema.json` description: authentication methods are optional.
+
+## Spec 0.3 revision — 2026-11-15 (`mcp-server` folded into `local` integrations)
+
+Normative change to the 0.3 draft (no spec-version bump). Validate with
+`@afps-spec/schema` 0.13.0.
+
+### Removed
+
+- The `mcp-server` package type and §3.4 (MCP-Server Package), with its
+  `manifest_version`, `server`, `tools` and `user_config` fields.
+  `dependencies.mcp_servers` goes with it: dependency maps are `skills` and
+  `integrations` only. §3.5 (Integration Package) is renumbered §3.4.
+- `source.server.name`, `source.server.version` and `source.server.vendored`:
+  a `local` source no longer references another package.
+- `delivery.env.<var>.user_config_key` and the `${user_config.*}` bridge.
+
+### Changed
+
+- §7.1: `source.server` of a `local` source is the inline run declaration,
+  with the MCPB vocabulary adopted verbatim: `type` (`node | python | binary |
+  uv`), `entry_point`, `mcp_config` and an optional advisory `tools[]`, which
+  is the canonical tool catalog of a local source (§7.8). There is no
+  `manifest_version`: `uv` is simply allowed.
+- `mcp_config.env` carries literal, non-secret values only. Credentials reach
+  the server exclusively through `delivery.env` / `delivery.files` (§7.6),
+  rendered by the runtime into the server process.
+- A `local` integration archive MUST contain the server payload referenced by
+  `source.server.entry_point` and a published archive MUST be self-contained;
+  the integration is no longer manifest-only (§2.5, §3.4).
+- §8.2 is retargeted at the server payload of a `local` integration
+  ("Local Server Code Execution"). The MCPB `sign` clause is dropped; a SHOULD
+  to verify the provenance of bundled dependencies recorded under `_meta`
+  remains.
+
+### Added
+
+- §7.1.1 MCPB Interoperability (Projection): a `local` integration exports to a
+  strict MCP Bundle (`manifest_version` `0.3`, or `0.4` for `uv`; each
+  `delivery.env` entry becomes `mcp_config.env`, each credential field it
+  references one `user_config` entry that is always `sensitive` and `required`)
+  and a `.mcpb` imports to an integration (sensitive `user_config` entries become
+  one `custom` auth method's credentials and `delivery.env`, with
+  `allow_all_uris: true` that an author SHOULD narrow; non-sensitive defaults are
+  inlined in `command`, `args` and `env`, platform overrides included). An
+  integration declaring `variables`, several auth methods, `delivery.http` or
+  `delivery.files` has no faithful MCPB form and a consumer MUST refuse the
+  export. An import MUST be refused when a sensitive entry is referenced
+  anywhere but an `env` value of the top-level `mcp_config`, an entry is
+  `multiple`, a sensitive entry is not a `string` or its key is outside
+  `[A-Za-z0-9_]`, a reference names an undeclared entry, an `env` value is not a
+  string or keeps a `${…}` placeholder after inlining, or
+  `compatibility.platforms` names no platform the runtime can run. The reader accepts any
+  `manifest_version`; the writer emits only `0.3` or `0.4`.
+
+### Clarified
+
+- §7.1 / §7.1.1: a runtime launches a `local` server from `type` and
+  `entry_point` alone. `mcp_config.command`, `args` and `platform_overrides` are
+  informative (carried for MCPB interoperability, not executed);
+  `mcp_config.env` values are literal strings merged beneath `delivery.env`,
+  and no placeholder is expanded in them.
+- §7.1.1: export builds `server` and `author` by picking fields (an object
+  `author` is copied, a string becomes `{ name }`, the scope fallback has no
+  `@`); `compatibility` is dropped on import.
+
+### Editorial
+
+- Definitions of an integration (§1, §2, §3.4, primer) read "a binding to an
   external service, optionally credentialed", matching unauthenticated
   integrations (§7.2).
-- `integration.schema.json` description: authentication methods are optional.
 - Conformance tests: retired-export assertion dropped, rules worded in the
   present tense.
 - IMPLEMENTATIONS.md: the Appstrate implementation refuses `variables` on an

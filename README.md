@@ -3,7 +3,7 @@
 ![AFPS v0.3](https://img.shields.io/badge/AFPS-v0.3-blue)
 
 AFPS is an open specification for declaring portable AI workflow packages.
-It standardizes how agents, skills, MCP servers, and integrations are described, versioned, and distributed.
+It standardizes how agents, skills, and integrations (including the local MCP servers integrations carry) are described, versioned, and distributed.
 It focuses on package definition and composition, not on tool calling or agent-to-agent transport.
 
 ## Ecosystem Positioning
@@ -22,10 +22,11 @@ Existing AI standards each package a single artifact type (MCPB → one MCP serv
   (this spec)     │ │  AFPS  .afps  (ZIP)                           │ │
                   │ │  manifest.json + companions                   │ │
                   │ │  ┌─────────┬───────┬───────────────────────┐  │ │
-                  │ │  │ agent   │ skill │ mcp-server            │  │ │
-                  │ │  │ (NEW)   │       │ (MCPB vocab)          │  │ │
+                  │ │  │ agent   │ skill │                       │  │ │
+                  │ │  │ (NEW)   │       │                       │  │ │
                   │ │  ├─────────┴───────┴───────────────────────┤  │ │
                   │ │  │ integration: source + auths + delivery │  │ │
+                  │ │  │ (local source: inline server, MCPB vocab)│ │ │
                   │ │  └────────────────────────────────────────┘  │ │
                   │ └───────────────────────────────────────────────┘ │
   ─────────────────────────────────────────────────────────────────────
@@ -48,18 +49,18 @@ Peer packaging formats and AFPS's relation to each:
 ```text
   Format         │ What it packages                  │ AFPS relation
   ───────────────┼───────────────────────────────────┼────────────────────────────────
-  MCPB           │ a single local MCP server         │ field vocab adopted by mcp-server
+  MCPB           │ a single local MCP server         │ field vocab adopted by local source
   Agent Skills   │ a single capability (SKILL.md)    │ superset adopted by skill
   A2A AgentCard  │ runtime discovery of one agent    │ optional, attached via _meta
   npm package    │ generic JS/TS code distribution   │ metadata fields aligned
   ───────────────┼───────────────────────────────────┼────────────────────────────────
-  AFPS           │ goal + skills + servers +         │ this spec — one archive,
-                 │ integrations + dependencies +     │ four artifact types,
-                 │ schemas — in one ZIP              │ versioned + composable
+  AFPS           │ goal + skills + integrations      │ this spec — one archive,
+                 │ (with their local servers) +      │ three artifact types,
+                 │ dependencies + schemas — in a ZIP │ versioned + composable
 ```
 
 - **MCP** defines runtime tool invocation. AFPS does not define tool-calling transport; a runtime MAY choose to expose AFPS capabilities via MCP.
-- **MCPB** defines how a local MCP server is packaged. An AFPS `mcp-server` manifest adopts the MCPB field vocabulary (`server`, `tools`, `user_config`, `manifest_version`) at the root alongside AFPS-native fields. Strict-MCPB host interoperability is not promised at 0.3; a publish-time projection is reserved for a future minor.
+- **MCPB** defines how a local MCP server is packaged. The `source.server` of an AFPS `local` integration adopts the MCPB field vocabulary (`type`, `entry_point`, `mcp_config`, `tools`) and the integration archive carries the server payload. The archive is not a strict MCPB bundle; the spec defines a mechanical projection to and from one (§7.1.1).
 - **Agent Skills** defines reusable capabilities (`SKILL.md`). AFPS skill packages are a strict superset: a valid Agent Skill directory becomes an AFPS skill when a `manifest.json` is added. The `SKILL.md` format, frontmatter fields, and optional directories (`scripts/`, `references/`, `assets/`) are preserved unchanged. AFPS adds identity, versioning, and dependency resolution.
 - **A2A** defines inter-agent communication. AFPS does not compete — A2A metadata can be added via the `_meta` extension mechanism.
 
@@ -91,7 +92,7 @@ ZIP both files together (using the `.afps` extension by convention) — that's a
 
 ### How an agent composes its dependencies
 
-A real agent declares its dependencies in three named maps (`skills`, `mcp_servers`, `integrations`), each a flat record of package id to semver range. Per-integration configuration (`tools`, `scopes`, `auth_key`, `required`) lives in the separate top-level `integrations_configuration` map. A credentialed MCP server is normally wrapped by an integration whose `source.kind: "local"` points at it; a freestanding `mcp_servers` dependency is appropriate only for utility servers that need no credentials.
+A real agent declares its dependencies in two named maps (`skills`, `integrations`), each a flat record of package id to semver range. Per-integration configuration (`tools`, `scopes`, `auth_key`, `required`) lives in the separate top-level `integrations_configuration` map. A local MCP server is declared inline by an integration whose `source.kind` is `"local"`; the integration archive carries the server payload, and a server that needs no credentials simply omits `auths`.
 
 ```text
   ┌──────────────────────────────────────────────────────────────────────┐
@@ -99,7 +100,6 @@ A real agent declares its dependencies in three named maps (`skills`, `mcp_serve
   │                                                                      │
   │  "dependencies": {                                                   │
   │    "skills":       { "@acme/rewrite-tone": "^1.0.0" },               │
-  │    "mcp_servers":  { "@acme/fetch-json":   "^1.0.0" },               │
   │    "integrations": { "@acme/gmail":        "^1.0.0" }                │
   │  },                                                                  │
   │  "integrations_configuration": {                                     │
@@ -109,26 +109,21 @@ A real agent declares its dependencies in three named maps (`skills`, `mcp_serve
   │                     "required": true }                               │
   │  }                                                                   │
   └────────┬──────────────────────┬───────────────────────┬──────────────┘
-           │ resolves against     │                       │
-           │ a package catalog    │                       │
-           │ (semver range →      │                       │
-           │  concrete version)   │                       │
-           ▼                      ▼                       ▼
-  ┌──────────────────┐  ┌────────────────────┐  ┌──────────────────────────┐
-  │ @acme/           │  │ @acme/fetch-json   │  │ @acme/gmail              │
-  │ rewrite-tone     │  │ (mcp-server,       │  │ (integration)            │
-  │ (skill)          │  │  utility — no auth)│  │ auths: { oauth, apikey } │
-  │ SKILL.md +       │  │ MCPB-vocab payload │  │ source.kind: "local"     │
-  │ scripts/ ...     │  │ at root            │  │ delivery.http: Bearer …  │
-  └──────────────────┘  └────────────────────┘  └────────────┬─────────────┘
-                                                             │ source.server →
-                                                             ▼
-                                                ┌──────────────────────────┐
-                                                │ @acme/gmail-server       │
-                                                │ (mcp-server, MCPB        │
-                                                │  payload; runtime injects│
-                                                │  the OAuth token at run) │
-                                                └──────────────────────────┘
+           │ resolves against     │
+           │ a package catalog    │
+           │ (semver range →      │
+           │  concrete version)   │
+           ▼                      ▼
+  ┌──────────────────┐  ┌──────────────────────────┐
+  │ @acme/           │  │ @acme/gmail              │
+  │ rewrite-tone     │  │ (integration)            │
+  │ (skill)          │  │ auths: { oauth, apikey } │
+  │ SKILL.md +       │  │ source.kind: "local"     │
+  │ scripts/ ...     │  │ source.server: inline    │
+  │                  │  │ server/ payload in the   │
+  │                  │  │ archive; runtime injects │
+  │                  │  │ the OAuth token at run   │
+  └──────────────────┘  └──────────────────────────┘
 ```
 
 Each box is one published `.afps` archive. See the [primer](./primer.md) for a worked example with the full manifest contents.
@@ -137,7 +132,7 @@ Each box is one published `.afps` archive. See the [primer](./primer.md) for a w
 
 - [spec.md](./spec.md) — the AFPS v0.3 draft specification
 - [primer.md](./primer.md) — non-normative introduction for newcomers
-- [examples/](./examples/) — minimal and full package examples (agent, skill, mcp-server, integration)
+- [examples/](./examples/) — minimal and full package examples (agent, skill, integration)
 - [packages/](./packages/) — reference TS artefacts published to npm under `@afps-spec/*`
   - [packages/schema/](./packages/schema/) — JSON Schema + Zod (see [README](./packages/schema/README.md))
   - [packages/types/](./packages/types/) — TS bindings for AFPS 0.3 contracts
@@ -150,7 +145,7 @@ Each box is one published `.afps` archive. See the [primer](./primer.md) for a w
 AFPS defines:
 
 - Package identity with scoped names and semantic versions
-- Manifest fields for `agent`, `skill`, `mcp-server`, and `integration`
+- Manifest fields for `agent`, `skill`, and `integration` (a `local` integration declares its MCP server inline and ships the payload)
 - A dependency model with semver ranges and separate per-integration configuration (tool selection, requested OAuth scopes)
 - A JSON Schema 2020-12 based schema system for input and output
 - ZIP package structure for distribution

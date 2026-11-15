@@ -2,7 +2,7 @@
  * AFPS 0.1 Conformance Test Suite
  *
  * Validates that:
- * 1. Valid 0.1 manifests (agent/skill/mcp-server/integration) pass.
+ * 1. Valid 0.1 manifests (agent/skill/integration) pass.
  * 2. Invalid manifests are correctly rejected.
  * 3. Spec constraints (§2–§7, §10) are enforced.
  * 4. camelCase fields are rejected / not treated as standard.
@@ -15,9 +15,9 @@ import { join } from "node:path";
 import {
   agentManifestSchema,
   skillManifestSchema,
-  mcpServerManifestSchema,
   integrationManifestSchema,
   integrationSource,
+  dependenciesSchema,
   packageTypeEnum,
 } from "../src/schemas.ts";
 
@@ -54,7 +54,6 @@ const validAgent = {
   dependencies: {
     integrations: { "@example/gmail": "^1.0.0" },
     skills: { "@example/rewrite-tone": "^1.0.0" },
-    mcp_servers: { "@example/fetch-json": "^1.0.0" },
   },
   integrations_configuration: {
     "@example/gmail": { scopes: ["https://www.googleapis.com/auth/gmail.readonly"] },
@@ -79,20 +78,10 @@ const validSkill = {
   description: "Rewrites text in a professional tone.",
 };
 
-const validMcpServer = {
-  name: "@example/fetch-json",
-  version: "1.0.0",
-  type: "mcp-server",
-  schema_version: "0.1",
-  manifest_version: "0.3",
-  display_name: "Fetch JSON",
-  description: "Fetches JSON over HTTP.",
-  author: { name: "AFPS Examples" },
-  server: {
-    type: "node",
-    entry_point: "server/index.js",
-    mcp_config: { command: "node", args: ["server/index.js"] },
-  },
+const validLocalServer = {
+  type: "node",
+  entry_point: "server/index.js",
+  mcp_config: { command: "node", args: ["${__dirname}/server/index.js"] },
   tools: [{ name: "fetch", description: "Fetch a URL" }],
 };
 
@@ -102,7 +91,7 @@ const validIntegrationOauth2 = {
   type: "integration",
   schema_version: "0.1",
   display_name: "Gmail",
-  source: { kind: "local", server: { name: "@example/gmail-server", version: "^1.2.0" } },
+  source: { kind: "local", server: validLocalServer },
   auths: {
     oauth: {
       type: "oauth2",
@@ -151,17 +140,17 @@ const validIntegrationApiKey = {
 // ─────────────────────────────────────────────
 
 describe("package types (§2.1)", () => {
-  test("the four 0.1 types are valid", () => {
+  test("the three 0.1 types are valid", () => {
     expectValid(agentManifestSchema, validAgent);
     expectValid(skillManifestSchema, validSkill);
-    expectValid(mcpServerManifestSchema, validMcpServer);
     expectValid(integrationManifestSchema, validIntegrationOauth2);
   });
 
-  test("packageTypeEnum accepts exactly the four 0.1 types", () => {
-    for (const t of ["agent", "skill", "mcp-server", "integration"]) {
+  test("packageTypeEnum accepts exactly the three 0.1 types", () => {
+    for (const t of ["agent", "skill", "integration"]) {
       expect(packageTypeEnum.safeParse(t).success).toBe(true);
     }
+    expect(packageTypeEnum.safeParse("mcp-server").success).toBe(false);
   });
 });
 
@@ -445,12 +434,11 @@ describe("dependencies (§4)", () => {
     author: "test",
   };
 
-  test("valid dependency maps (skills/mcp_servers/integrations)", () => {
+  test("valid dependency maps (skills/integrations)", () => {
     expectValid(agentManifestSchema, {
       ...base,
       dependencies: {
         skills: { "@acme/rewrite": "^1.0.0" },
-        mcp_servers: { "@acme/fetch": "~2.1.0" },
         integrations: { "@acme/gmail": ">=1.0.0" },
       },
     });
@@ -584,147 +572,89 @@ describe("schema system (§5)", () => {
 });
 
 // ─────────────────────────────────────────────
-// §3.4 — MCP-server manifest
-// ─────────────────────────────────────────────
-
-describe("mcp-server manifest (§3.4)", () => {
-  test("valid mcp-server with _meta contract", () => {
-    expectValid(mcpServerManifestSchema, validMcpServer);
-  });
-
-  test("string author is also accepted (MCPB permits both)", () => {
-    expectValid(mcpServerManifestSchema, { ...validMcpServer, author: "Jane Dev" });
-  });
-
-  test("MCPB baseline fields required (manifest_version, name, version, server)", () => {
-    for (const k of ["manifest_version", "name", "version", "server"]) {
-      const m = { ...validMcpServer };
-      delete (m as Record<string, unknown>)[k];
-      expectInvalid(mcpServerManifestSchema, m);
-    }
-  });
-
-  test("server requires type + entry_point + mcp_config.command", () => {
-    expectInvalid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      server: { entry_point: "x.js", mcp_config: { command: "node" } },
-    });
-    expectInvalid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      server: { type: "node", mcp_config: { command: "node" } },
-    });
-    expectInvalid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      server: { type: "node", entry_point: "x.js", mcp_config: {} },
-    });
-  });
-
-  test("server.type enum: node/python/binary/uv accepted, others rejected", () => {
-    for (const t of ["node", "python", "binary"]) {
-      expectValid(mcpServerManifestSchema, {
-        ...validMcpServer,
-        server: { ...validMcpServer.server, type: t },
-      });
-    }
-    expectInvalid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      server: { ...validMcpServer.server, type: "ruby" },
-    });
-  });
-
-  test("user_config entry must be MCPB-typed (§3.4)", () => {
-    expectValid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      user_config: {
-        api_key: { type: "string", title: "API key", sensitive: true },
-      },
-    });
-    // missing/invalid type discriminant
-    expectInvalid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      user_config: { api_key: { title: "no type" } },
-    });
-    expectInvalid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      user_config: { api_key: { type: "secret" } },
-    });
-  });
-
-  test("uv server type requires manifest_version 0.4", () => {
-    expectInvalid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      manifest_version: "0.3",
-      server: { ...validMcpServer.server, type: "uv" },
-    });
-    expectValid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      manifest_version: "0.4",
-      server: { ...validMcpServer.server, type: "uv" },
-    });
-  });
-
-  test("manifest_version enforces MAJOR.MINOR format (§3.4 + Appendix A)", () => {
-    // Recommended values accept
-    expectValid(mcpServerManifestSchema, { ...validMcpServer, manifest_version: "0.3" });
-    expectValid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      manifest_version: "0.4",
-      server: { ...validMcpServer.server, type: "uv" },
-    });
-    // Forward-compat: future MCPB versions still accepted (no hard enum)
-    expectValid(mcpServerManifestSchema, { ...validMcpServer, manifest_version: "1.0" });
-    expectValid(mcpServerManifestSchema, { ...validMcpServer, manifest_version: "12.34" });
-
-    // Format rejections
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, manifest_version: "abc" });
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, manifest_version: "" });
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, manifest_version: "0.3.1" });
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, manifest_version: "1" });
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, manifest_version: "v0.3" });
-  });
-
-  test("name MUST be a scoped name (§2.2)", () => {
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, name: "fetch-json" });
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, name: "@scope/Name" });
-  });
-
-  test("type MUST be mcp-server", () => {
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, type: "tool" });
-    expectInvalid(mcpServerManifestSchema, { ...validMcpServer, type: "agent" });
-  });
-
-  test("unknown _meta keys do not cause failure (§10)", () => {
-    expectValid(mcpServerManifestSchema, {
-      ...validMcpServer,
-      _meta: {
-        "com.example/provenance": { source: "git" },
-      },
-    });
-  });
-});
-
-// ─────────────────────────────────────────────
-// §3.5 / §7.1 — Integration source
+// §3.4 / §7.1 — Integration source
 // ─────────────────────────────────────────────
 
 describe("integration source (§7.1)", () => {
-  test("local source references an mcp-server by scoped name + range", () => {
+  test("local source declares its server inline (MCPB vocabulary)", () => {
     expectValid(integrationManifestSchema, validIntegrationOauth2);
     expectValid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      source: {
+        kind: "local",
+        server: {
+          type: "uv",
+          entry_point: "server/main.py",
+          mcp_config: { command: "uv", args: ["run", "${__dirname}/server/main.py"], env: { LOG: "info" } },
+        },
+      },
+    });
+  });
+
+  test("local source: type enum, entry_point and mcp_config.command are required", () => {
+    for (const t of ["node", "python", "binary", "uv"]) {
+      expectValid(integrationManifestSchema, {
+        ...validIntegrationOauth2,
+        source: { kind: "local", server: { ...validLocalServer, type: t } },
+      });
+    }
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      source: { kind: "local", server: { ...validLocalServer, type: "ruby" } },
+    });
+    for (const k of ["type", "entry_point", "mcp_config"]) {
+      const server: Record<string, unknown> = { ...validLocalServer };
+      delete server[k];
+      expectInvalid(integrationManifestSchema, { ...validIntegrationOauth2, source: { kind: "local", server } });
+    }
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      source: { kind: "local", server: { ...validLocalServer, mcp_config: { args: [] } } },
+    });
+  });
+
+  test("local source: tools entries need a name; tools is optional", () => {
+    const { tools: _tools, ...noTools } = validLocalServer;
+    expectValid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      source: { kind: "local", server: noTools },
+    });
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      source: { kind: "local", server: { ...validLocalServer, tools: [{ description: "no name" }] } },
+    });
+  });
+
+  test("local source: the former reference shape { name, version } is refused", () => {
+    expectInvalid(integrationManifestSchema, {
+      ...validIntegrationOauth2,
+      source: { kind: "local", server: { name: "@x/y", version: "^1.0.0" } },
+    });
+    expectInvalid(integrationManifestSchema, {
       ...validIntegrationOauth2,
       source: { kind: "local", server: { name: "@x/y", version: "^1.0.0", vendored: true } },
     });
   });
 
-  test("local source rejects unscoped server name / invalid range", () => {
-    expectInvalid(integrationManifestSchema, {
-      ...validIntegrationOauth2,
-      source: { kind: "local", server: { name: "bad", version: "^1.0.0" } },
-    });
-    expectInvalid(integrationManifestSchema, {
-      ...validIntegrationOauth2,
-      source: { kind: "local", server: { name: "@x/y", version: "nope!!" } },
-    });
+  test("the schema no longer declares vendored, user_config_key or dependencies.mcp_servers", () => {
+    // Objects are looseObject, so unknown keys round-trip and are not rejected;
+    // the guarantee is that the schema declares none of them.
+    const decl = (o: unknown, k: string) =>
+      Object.hasOwn((o as { shape: Record<string, unknown> }).shape, k);
+    expect(decl(dependenciesSchema.unwrap(), "mcp_servers")).toBe(false);
+    expect(decl(dependenciesSchema.unwrap(), "skills")).toBe(true);
+    const json = JSON.stringify(
+      JSON.parse(readFileSync(join(import.meta.dir, "../v0/integration.schema.json"), "utf-8")),
+    );
+    expect(json).not.toContain("user_config_key");
+    expect(json).not.toContain("vendored");
+    expect(json).not.toContain("manifest_version");
+  });
+
+  test('type "mcp-server" is no longer a package type', () => {
+    expectInvalid(skillManifestSchema, { ...validSkill, type: "mcp-server" });
+    expectInvalid(integrationManifestSchema, { ...validIntegrationOauth2, type: "mcp-server" });
+    expectInvalid(agentManifestSchema, { ...validAgent, type: "mcp-server" });
   });
 
   test("remote source: url + transport enum", () => {
@@ -804,7 +734,7 @@ describe("unauthenticated integration (§7.2)", () => {
     expectValid(integrationManifestSchema, publicRemote);
     expectValid(integrationManifestSchema, {
       ...publicRemote,
-      source: { kind: "local", server: { name: "@x/y", version: "^1.0.0" } },
+      source: { kind: "local", server: validLocalServer },
     });
   });
 

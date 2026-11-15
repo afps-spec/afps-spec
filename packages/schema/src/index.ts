@@ -16,7 +16,6 @@ export {
   agentManifestObjectSchema,
   refineIntegrationsConfiguration,
   skillManifestSchema,
-  mcpServerManifestSchema,
   integrationManifestSchema,
   // Shared primitives / sub-schemas — reusable by consumers
   scopedName,
@@ -27,8 +26,8 @@ export {
   integrationConfigurationObject,
   // dependencies (§4)
   dependenciesSchema,
-  // mcp-server (§3.4)
-  mcpServerTypeEnum,
+  // local server (§7.1)
+  localServerTypeEnum,
   // integration source (§7.1)
   integrationSource,
   transportEnum,
@@ -52,7 +51,6 @@ export {
 export type {
   AgentManifest,
   SkillManifest,
-  McpServerManifest,
   IntegrationManifest,
   PackageType,
 } from "./schemas.ts";
