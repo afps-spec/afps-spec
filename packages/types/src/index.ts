@@ -31,7 +31,6 @@ export interface DependencyRef {
 }
 
 export type SkillRef = DependencyRef;
-export type McpServerRef = DependencyRef;
 export type IntegrationRef = DependencyRef;
 
 /**

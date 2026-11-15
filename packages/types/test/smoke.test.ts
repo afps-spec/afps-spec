@@ -11,7 +11,6 @@ import * as types from "../src/index.ts";
 import type {
   DependencyRef,
   SkillRef,
-  McpServerRef,
   IntegrationRef,
   Tool,
   ToolContext,
@@ -21,7 +20,7 @@ import type {
 
 // Compile-time assertions: the AFPS dependency-ref set and the runtime
 // tool protocol must remain exported. (Verified by tsc, not at runtime.)
-type _Refs = [DependencyRef, SkillRef, McpServerRef, IntegrationRef];
+type _Refs = [DependencyRef, SkillRef, IntegrationRef];
 type _Protocol = [Tool, ToolContext, ToolResult, RunEvent];
 
 describe("@afps-spec/types module", () => {

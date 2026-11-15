@@ -40,7 +40,6 @@ schema/
 ├── v0/                   ← AFPS v0.x schemas
 │   ├── agent.schema.json
 │   ├── skill.schema.json
-│   ├── mcp-server.schema.json
 │   └── integration.schema.json
 ├── src/
 │   ├── schemas.ts        ← Zod source (generates v0/)
@@ -51,7 +50,7 @@ schema/
 
 URLs follow the pattern `https://schemas.afps.dev/v0/<type>.schema.json`.
 
-The `mcp-server.schema.json` validates the MCP Bundle (MCPB) manifest a built `mcp-server` package embeds; AFPS-specific data is carried under the MCPB `_meta` object.
+A `local` integration declares its MCP server inline under `source.server` (MCPB field vocabulary: `type`, `entry_point`, `mcp_config`, `tools`); there is no separate `mcp-server` schema. The projection to a strict MCP Bundle is specified in spec §7.1.1.
 
 ## Schema validation
 

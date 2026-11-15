@@ -43,7 +43,7 @@ const isCheck = process.argv.includes("--check");
  */
 function applyCrossFieldRules(filename: string, schema: Record<string, any>): void {
   if (filename === "integration.schema.json") {
-    // §3.5, §7.2 — `auths`, when present, names at least one auth method.
+    // §3.4, §7.2 — `auths`, when present, names at least one auth method.
     schema.properties.auths.minProperties = 1;
 
     // §7.12 — the literal branch of `source.remote.url` and `issuer` excludes `{$`, so a
@@ -277,25 +277,11 @@ function applyCrossFieldRules(filename: string, schema: Record<string, any>): vo
       then: { properties: { allow_undeclared_tools: { const: true } }, required: ["allow_undeclared_tools"] },
     });
   }
-
-  if (filename === "mcp-server.schema.json") {
-    // §3.4 — server.type "uv" requires manifest_version "0.4".
-    schema.allOf = [
-      {
-        if: {
-          properties: { server: { properties: { type: { const: "uv" } }, required: ["type"] } },
-          required: ["server"],
-        },
-        then: { properties: { manifest_version: { const: "0.4" } } },
-      },
-    ];
-  }
 }
 
 const {
   agentManifestSchema,
   skillManifestSchema,
-  mcpServerManifestSchema,
   integrationManifestSchema,
 } = createSchemas(MAJOR);
 
@@ -315,15 +301,6 @@ const entries = [
       "Manifest schema for AFPS 0.3 skill packages. " +
       "A skill is a superset of the Agent Skills format with package identity and versioning.",
     schema: skillManifestSchema,
-  },
-  {
-    filename: "mcp-server.schema.json",
-    title: "AFPS MCP-Server Manifest",
-    description:
-      "Manifest schema for AFPS 0.3 mcp-server packages. " +
-      "The manifest is AFPS-native at the root (type, schema_version, scoped name, dependencies) and adopts " +
-      "the MCPB field vocabulary (manifest_version, server, tools, user_config) verbatim; it is not a strict MCPB manifest.",
-    schema: mcpServerManifestSchema,
   },
   {
     filename: "integration.schema.json",

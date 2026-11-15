@@ -6,9 +6,9 @@
 
 ### Abstract
 
-Agent Format Packaging Standard (AFPS) is an open specification for declaring portable AI workflow packages. It defines a JSON-based manifest format for four package types — agents, skills, MCP servers, and integrations — along with their dependency model, schema system, archive layout, and integration authentication metadata. AFPS standardizes package definition and composition; it does not define tool-calling protocols, agent-to-agent transport, or runtime execution APIs.
+Agent Format Packaging Standard (AFPS) is an open specification for declaring portable AI workflow packages. It defines a JSON-based manifest format for three package types — agents, skills, and integrations — along with their dependency model, schema system, archive layout, and integration authentication metadata. AFPS standardizes package definition and composition; it does not define tool-calling protocols, agent-to-agent transport, or runtime execution APIs.
 
-AFPS uses a `snake_case` field vocabulary across all package types. The `mcp-server` package type is AFPS-native at the root and adopts the MCP Bundle ([MCPB]) field vocabulary for its server, tools, and user-configuration block; the `integration` package type wraps a capability source (a local `mcp-server`, a remote MCP endpoint, or an HTTP API) with authentication and credential-delivery metadata.
+AFPS uses a `snake_case` field vocabulary across all package types. The `integration` package type wraps a capability source (a local MCP server declared inline in the integration, a remote MCP endpoint, or an HTTP API) with authentication and credential-delivery metadata; the inline run declaration of a local server adopts the MCP Bundle ([MCPB]) field vocabulary.
 
 ### Status of this Document
 
@@ -41,8 +41,7 @@ This draft is published for community review and early implementation feedback. 
   - [3.1 Common Fields](#31-common-fields)
   - [3.2 Agent Manifest](#32-agent-manifest)
   - [3.3 Skill Package](#33-skill-package)
-  - [3.4 MCP-Server Package](#34-mcp-server-package)
-  - [3.5 Integration Package](#35-integration-package)
+  - [3.4 Integration Package](#34-integration-package)
 - [4. Dependency Model](#4-dependency-model)
   - [4.1 Dependency Declaration](#41-dependency-declaration)
   - [4.2 Version Range Resolution](#42-version-range-resolution)
@@ -71,7 +70,7 @@ This draft is published for community review and early implementation feedback. 
   - [7.12 Connection Variables](#712-connection-variables)
 - [8. Security Considerations](#8-security-considerations)
   - [8.1 Archive Processing](#81-archive-processing)
-  - [8.2 MCP-Server Code Execution](#82-mcp-server-code-execution)
+  - [8.2 Local Server Code Execution](#82-local-server-code-execution)
   - [8.3 Credential Handling](#83-credential-handling)
   - [8.4 Prompt Injection](#84-prompt-injection)
   - [8.5 Supply Chain](#85-supply-chain)
@@ -96,9 +95,9 @@ This draft is published for community review and early implementation feedback. 
 
 Agent Format Packaging Standard (AFPS) defines a declarative package format for AI workflows and closely related package types.
 
-The central artifact in AFPS is the **agent** — a package that captures the user's intent (via a `prompt.md` companion file) together with everything the agent needs to fulfill it: skills, MCP servers, integration connections, input and output schemas, and execution settings. An agent execution is **non-interactive and run-to-completion**: the agent receives the objective, the input data, and the available resources, processes the task autonomously, and returns a structured result. There is no conversational back-and-forth — the agent runs from start to finish without user interaction. Where other standards define agent capabilities (what an agent *can do*), an AFPS agent defines an objective (what the agent *should accomplish*).
+The central artifact in AFPS is the **agent** — a package that captures the user's intent (via a `prompt.md` companion file) together with everything the agent needs to fulfill it: skills, integration connections, input and output schemas, and execution settings. An agent execution is **non-interactive and run-to-completion**: the agent receives the objective, the input data, and the available resources, processes the task autonomously, and returns a structured result. There is no conversational back-and-forth — the agent runs from start to finish without user interaction. Where other standards define agent capabilities (what an agent *can do*), an AFPS agent defines an objective (what the agent *should accomplish*).
 
-AFPS also defines three supporting package types — **skills** (reusable instructions), **MCP servers** (runnable tool servers, packaged as MCP Bundles), and **integrations** (bindings to external services, optionally credentialed) — that agents compose as dependencies.
+AFPS also defines two supporting package types — **skills** (reusable instructions) and **integrations** (bindings to external services, optionally credentialed, whose capability source may be a local MCP server shipped inside the integration) — that agents compose as dependencies.
 
 The goal of AFPS is to let producers publish portable artifacts that describe:
 
@@ -114,13 +113,13 @@ AFPS is intentionally centered on package definition. It standardizes package me
 
 This specification defines:
 
-- package types: `agent`, `skill`, `mcp-server`, `integration`;
+- package types: `agent`, `skill`, `integration`;
 - package identity and versioning;
 - manifest fields and companion file requirements;
 - ZIP archive structure;
 - dependency declaration and dependency cycle semantics;
 - a constrained schema system used by `input`, `output`, and selected credential definitions;
-- the packaging of MCP servers as MCP Bundles (MCPB); and
+- the inline declaration and packaging of local MCP servers inside integrations, and their projection to MCP Bundles (MCPB); and
 - integration authentication, credential acquisition, and credential delivery metadata.
 
 This specification does not define:
@@ -135,7 +134,7 @@ AFPS is transport-agnostic: it does not prescribe how packages are fetched, tran
 
 ### 1.2.1 Relationship to Other Standards
 
-AFPS occupies the **packaging-and-composition** layer: one archive declares an agent's goal and every skill, MCP server, and integration it depends on, with versioned dependencies between them. Existing AI standards each package a single artifact type (MCPB → one MCP server; Agent Skills → one skill; A2A AgentCard → one runtime agent endpoint); AFPS composes all four artifact types in a single distribution archive.
+AFPS occupies the **packaging-and-composition** layer: one archive declares an agent's goal and every skill and integration it depends on, with versioned dependencies between them. Existing AI standards each package a single artifact type (MCPB → one MCP server; Agent Skills → one skill; A2A AgentCard → one runtime agent endpoint); AFPS composes agents, skills, and integrations (including the local servers integrations carry) in a single distribution archive.
 
 ```text
 ─────────────────────────────────────────────────────────────
@@ -147,8 +146,8 @@ Distribution    AFPS Registry · npm · OCI · any HTTP store     not in spec �
 Packaging       AFPS .afps (ZIP) — manifest.json + companions  this spec
 (this spec)       ├── agent       (NEW)
                   ├── skill       (extends Agent Skills)
-                  ├── mcp-server  (adopts MCPB vocab)
-                  └── integration (source + auths + delivery)
+                  └── integration (source + auths + delivery;
+                                   local source adopts MCPB vocab)
 ─────────────────────────────────────────────────────────────
                                 ▲ consumed by
 ─────────────────────────────────────────────────────────────
@@ -162,12 +161,12 @@ Wire protocols  MCP (tool calls) · HTTP/REST · A2A             not in spec
 ─────────────────────────────────────────────────────────────
 ```
 
-An agent's `prompt.md` replaces what a human would type to give an agent its objective. Skills, MCP servers, and integrations are the resources the agent uses to fulfill that objective. AFPS packages all of these together into a portable, versioned artifact.
+An agent's `prompt.md` replaces what a human would type to give an agent its objective. Skills and integrations are the resources the agent uses to fulfill that objective. AFPS packages all of these together into a portable, versioned artifact.
 
 Existing standards address different concerns, and AFPS adopts several of them verbatim rather than reinventing them:
 
 - **MCP** [Model Context Protocol]: defines how agents invoke tools at runtime (JSON-RPC transport). AFPS does not define tool-calling transport. A runtime MAY expose AFPS capabilities via MCP, but this is an implementation concern, not an AFPS requirement.
-- **MCPB** [MCP Bundle]: defines the manifest and archive format for packaging a **local** MCP server (command, runtime, configuration). An AFPS `mcp-server` manifest adopts the MCPB field vocabulary (`manifest_version`, `server`, `tools`, `user_config`) at the root alongside AFPS-native fields (`type`, `schema_version`, scoped `name`, `dependencies`). AFPS does not claim strict-MCPB schema compatibility; producers needing to install into an MCPB host (Claude Desktop, mcpb CLI) MUST emit a strict-MCPB projection separately (a future minor of this spec MAY define such a projection mechanically).
+- **MCPB** [MCP Bundle]: defines the manifest and archive format for packaging a **local** MCP server (command, runtime, configuration). The `source.server` object of an AFPS `local` integration (§7.1) adopts the MCPB field vocabulary (`type`, `entry_point`, `mcp_config`, `tools`) verbatim. An AFPS integration archive is not a strict MCPB bundle; §7.1.1 defines the mechanical projection between a `local` integration and a strict MCPB bundle.
 - **Agent Skills** [Anthropic / AAIF]: defines the `SKILL.md` format for declaring reusable agent capabilities. AFPS skill packages (§3.3) are a strict superset of Agent Skills: a valid Agent Skill directory (`SKILL.md` plus optional `scripts/`, `references/`, `assets/`) becomes a valid AFPS skill package when a `manifest.json` is added. The `SKILL.md` format, including all frontmatter fields defined by Agent Skills, is preserved unchanged. AFPS adds package identity, versioning, dependency declarations, and a distribution format — it does not alter the skill content model. Skills define **capabilities**, not **goals** — the goal comes from the AFPS agent that composes them.
 - **OAuth 2.0 / OpenID Connect**: AFPS integration authentication (§7) declares OAuth 2.0 [RFC 6749] authorization servers using the metadata vocabulary of [RFC 8414] (OAuth Authorization Server Metadata) and [OpenID Connect Discovery], requests resources per [RFC 8707], and uses PKCE per [RFC 7636]. This aligns AFPS with the same standards the MCP Authorization specification builds on.
 - **OpenAPI Arazzo** [Arazzo]: the OpenAPI workflows specification. AFPS `connect.login` (§7.7) aligns with the Arazzo request → assert → extract → reuse model (`success_criteria`, `outputs`, runtime expressions), with documented AFPS extensions for credential extraction.
@@ -191,10 +190,10 @@ Packaging    AFPS                                 "how it is all declared and di
   - **AFPS Consumer**: reads, validates, and processes AFPS packages.
   - **AFPS Registry**: stores versioned AFPS packages, resolves dependencies, and enforces publish-time constraints.
 - **Manifest**: the root `manifest.json` file contained in every AFPS package archive.
-- **Companion file**: a required non-manifest file such as `prompt.md`, `SKILL.md`, or an MCP server entry point.
+- **Companion file**: a required non-manifest file such as `prompt.md`, `SKILL.md`, or the entry point of a local integration's server.
 - **Dependency**: an entry under `dependencies`, declaring a package that this package depends on, with a semver version range.
-- **MCP server**: a package whose manifest is AFPS-native at the root and adopts the MCP Bundle (MCPB) field vocabulary to describe how to run a local MCP tool server (§3.4).
-- **Integration**: a package describing a binding to an external service, optionally credentialed — its capability source, any authentication methods, and credential delivery (§3.5, §7).
+- **Local server**: the MCP tool server a `local` integration declares inline under `source.server` and ships in its own archive, using the MCP Bundle (MCPB) field vocabulary for its run declaration (§7.1).
+- **Integration**: a package describing a binding to an external service, optionally credentialed — its capability source, any authentication methods, and credential delivery (§3.4, §7).
 - **Capability source**: the surface an integration binds to — a local MCP server, a remote MCP endpoint, or an HTTP API (§7.1).
 - **Auth method**: a named authentication configuration under an integration's `auths` map (§7.2). This document uses "auth method" and "authentication method" interchangeably.
 - **Delivery**: the declaration of where an acquired credential is injected at runtime — HTTP request, environment variable, or file (§7.6). The runtime act of placing the credential is referred to as *injection*; "credential delivery" and "delivery" denote the same declaration.
@@ -209,12 +208,11 @@ Conforming producers MUST emit manifests and package archives that satisfy the r
 
 ### 2.1 Package Types
 
-AFPS defines four package types:
+AFPS defines three package types:
 
 - `agent`: a complete workflow package consisting of manifest metadata and a `prompt.md` companion file;
 - `skill`: a declarative capability package consisting of a minimal manifest and `SKILL.md`;
-- `mcp-server`: a runnable MCP tool server, whose manifest adopts the MCP Bundle (MCPB) vocabulary at the root for the server, tools, and user-configuration fields, alongside the standard AFPS common fields (§3.4);
-- `integration`: a binding to an external service, optionally credentialed, described entirely by `manifest.json` (§3.5).
+- `integration`: a binding to an external service, optionally credentialed, described by `manifest.json`, plus the server payload when its source is a local server (§3.4, §7.1).
 
 A package's `type` field is the dispatch key used by validators and archive parsers. Producers MUST set it to exactly one of the values above.
 
@@ -239,7 +237,7 @@ The full scoped-name pattern is:
 ^@[a-z0-9]([a-z0-9-]*[a-z0-9])?\/[a-z0-9]([a-z0-9-]*[a-z0-9])?$
 ```
 
-The AFPS package identity is the top-level `name` field for all four package types. Dependency references (§4) always use this identity.
+The AFPS package identity is the top-level `name` field for all three package types. Dependency references (§4) always use this identity.
 
 ### 2.3 Versioning
 
@@ -258,13 +256,13 @@ How consumers resolve version ranges against a package catalog is an implementat
 
 AFPS package model evolution is tracked by the `schema_version` field, a `MAJOR.MINOR` string. A change in `MAJOR` indicates a breaking manifest model change; a change in `MINOR` indicates an additive, backwards-compatible revision. Packages targeting this specification emit `schema_version: "0.3"`. While AFPS is at major version `0`, any minor revision MAY introduce breaking changes.
 
-`schema_version` applies to all four package types. An `mcp-server` manifest additionally carries `manifest_version`, which tags the MCPB-vocabulary version of its embedded server/tools/user_config block (§3.4); the two version fields are independent.
+`schema_version` applies to all three package types.
 
 When a consumer encounters a manifest whose `schema_version` has a higher MAJOR number than the highest version it supports, it MUST reject the manifest and SHOULD report an error identifying the unsupported schema version. Processing a manifest with an unknown major version could lead to silent data loss or incorrect behavior.
 
 When a consumer encounters a manifest whose `schema_version` has the same MAJOR number but a higher MINOR number than the highest version it supports, it SHOULD process the manifest on a best-effort basis. Unknown fields SHOULD be preserved. Consumers MAY emit a warning indicating that some fields may not be fully understood.
 
-When `schema_version` is absent from a `skill`, `mcp-server`, or `integration` manifest (where the field is optional), consumers SHOULD treat the package as targeting schema version `0.3`.
+When `schema_version` is absent from a `skill` or `integration` manifest (where the field is optional), consumers SHOULD treat the package as targeting schema version `0.3`.
 
 ### 2.5 Package Archive Format
 
@@ -276,12 +274,11 @@ Every package archive MUST contain `manifest.json` at the archive root. Addition
 | --- | --- |
 | `agent` | `prompt.md` at archive root, non-empty |
 | `skill` | `SKILL.md` at archive root; optional `scripts/`, `references/`, `assets/` directories (see §3.3) |
-| `mcp-server` | the server payload referenced by `server.entry_point`; optional `icon` (see §3.4) |
-| `integration` | optional `INTEGRATION.md` at archive root |
+| `integration` | optional `INTEGRATION.md` at archive root; when `source.kind` is `local`, the server payload referenced by `source.server.entry_point` (see §3.4, §7.1) |
 
 Producers SHOULD use the `.afps` file extension for package archives (e.g., `customer-intake-1.0.0.afps`). Consumers MUST accept archives regardless of file extension. The `.afps` extension is a convention for human recognition and tool association; it does not alter the archive format, which remains standard ZIP.
 
-An `mcp-server` archive is not, by itself, a strict MCPB bundle: the manifest carries AFPS-native top-level fields (`type`, `schema_version`, `dependencies`, scoped `name`) alongside the MCPB-vocabulary fields (`server`, `tools`, `user_config`, `manifest_version`). A producer that wishes to additionally distribute the package to MCPB hosts (such as Claude Desktop) MAY emit a strict-MCPB projection at publish time; the projection rules are out of scope for this revision and reserved for a future minor (§10.2).
+A `local` integration archive is not, by itself, a strict MCPB bundle: the manifest carries AFPS-native fields (`type`, `schema_version`, `dependencies`, scoped `name`, `auths`) alongside the MCPB-vocabulary `source.server` object. §7.1.1 defines the projection to and from a strict MCPB bundle.
 
 All text files in the archive MUST be encoded in UTF-8.
 
@@ -312,14 +309,14 @@ All manifests are JSON objects. Unknown top-level fields and unknown nested fiel
 #### `type`
 - **Type**: string
 - **Required**: MUST for all package types
-- **Format**: one of `agent`, `skill`, `mcp-server`, `integration`
+- **Format**: one of `agent`, `skill`, `integration`
 - **Description**: Determines package validation and required companion files.
 - **Example**: `agent`
 - **Default**: none
 
 #### `display_name`
 - **Type**: string
-- **Required**: MUST for `agent`; SHOULD for `skill`, `mcp-server`, and `integration`
+- **Required**: MUST for `agent`; SHOULD for `skill` and `integration`
 - **Format**: for agents, minimum length 1
 - **Description**: Human-facing label for the package.
 - **Example**: `Customer Intake Assistant`
@@ -359,7 +356,7 @@ All manifests are JSON objects. Unknown top-level fields and unknown nested fiel
 
 #### `author`
 - **Type**: `Author` — either a string (compact form) or an object
-- **Required**: MUST for `agent`; MAY for `skill`, `mcp-server`, `integration`
+- **Required**: MUST for `agent`; MAY for `skill` and `integration`
 - **Format**: `string` (free text), or `object` with `name` (REQUIRED), `email` (OPTIONAL), `url` (OPTIONAL). The object form is aligned with the npm `author` field.
 - **Description**: Human author or publishing identity.
 - **Example (string)**: `"AFPS Examples"`
@@ -438,7 +435,7 @@ All manifests are JSON objects. Unknown top-level fields and unknown nested fiel
 
 #### `schema_version`
 - **Type**: string
-- **Required**: MUST for `agent`; MAY for `skill`, `mcp-server`, and `integration`
+- **Required**: MUST for `agent`; MAY for `skill` and `integration`
 - **Format**: `MAJOR.MINOR` where both segments are non-negative integers (e.g., `0.1`). The format follows a subset of semantic versioning without the patch component. A change in `MAJOR` indicates a breaking manifest model change; a change in `MINOR` indicates an additive, backwards-compatible revision. (While AFPS is at `MAJOR` `0`, a minor revision MAY also break compatibility.)
 - **Description**: Declares which version of the AFPS manifest model the package targets. This field allows consumers to select the appropriate validation rules when the specification evolves. Producers MUST emit at least `0.3` for packages targeting this specification; producers using fields introduced in a later minor revision MUST emit at least the minor that introduced them.
 - **Example**: `0.3`
@@ -447,7 +444,7 @@ All manifests are JSON objects. Unknown top-level fields and unknown nested fiel
 #### `dependencies`
 - **Type**: object
 - **Required**: MAY
-- **Format**: object containing optional `skills`, `mcp_servers`, and `integrations` maps. Each map value is a semver-range string (§4.1). The maps declare which packages are depended on and at what versions — nothing more.
+- **Format**: object containing optional `skills` and `integrations` maps. Each map value is a semver-range string (§4.1). The maps declare which packages are depended on and at what versions — nothing more.
 - **Description**: Declares packages that this package depends on. Consumers use this field for dependency resolution, installation, and composition.
 - **Example**: `{ "integrations": { "@example/gmail": "^1.0.0" }, "skills": { "@example/rewrite-tone": "^1.0.0" } }`
 - **Default**: none
@@ -535,52 +532,11 @@ Skill content is designed for efficient context usage across three levels:
 
 Producers SHOULD keep `SKILL.md` under 500 lines and move detailed reference material to separate files.
 
-### 3.4 MCP-Server Package
+### 3.4 Integration Package
 
-An `mcp-server` package declares a runnable, local MCP tool server. Its manifest is an AFPS-native manifest at the root (common fields per §3.1, `type: "mcp-server"`, `schema_version`, `name` scoped per §2.2, optional `dependencies` per §4.1) and additionally carries the **MCPB (MCP Bundle) field vocabulary** for the server run declaration, advisory tool list, and user-configuration mechanism.
+An `integration` package is a manifest, an optional `INTEGRATION.md` companion, and — when its `source.kind` is `local` — the server payload referenced by `source.server.entry_point`. It describes a **binding to an external service**: which capability surface the service is reached through (`source`), how the caller authenticates (`auths`, absent for a service that needs no credential), how an acquired credential is injected at runtime (`delivery`), and optional per-tool metadata. The full authentication model is specified in §7.
 
-AFPS does not redefine these MCPB-vocabulary fields; it adopts them verbatim so that an existing MCPB server payload (the contents of an `mcpb init` scaffold) can be packaged as an `mcp-server` without modification. Strict-MCPB host interoperability (validating against the MCPB schema, installing into Claude Desktop or another MCPB host without conversion) is **not** a goal of AFPS 0.3: a publish-time projection to a strict MCPB bundle MAY be added in a future minor (§10.2). Producers that need strict-MCPB compatibility today MUST emit the strict form separately.
-
-#### `manifest_version`
-- **Type**: string
-- **Required**: MUST for `mcp-server`
-- **Format**: tags the MCPB-vocabulary version of the embedded `server` / `tools` / `user_config` fields. Producers SHOULD emit `"0.3"` (the baseline of `mcpb init`). Producers MUST emit `"0.4"` only when the `uv` server type is required.
-- **Description**: Independent of the AFPS `schema_version`. A higher `manifest_version` indicates that the MCPB-vocabulary block uses MCPB additions; `schema_version` continues to track AFPS-model evolution.
-- **Default**: none
-
-#### `server`
-- **Type**: object
-- **Required**: MUST for `mcp-server`
-- **Format**: object with REQUIRED `type` (`node` | `python` | `binary` for `manifest_version: "0.3"`; additionally `uv` for `"0.4"`), REQUIRED `entry_point` (relative path within the archive), and REQUIRED `mcp_config` `{ command, args?, env?, platform_overrides? }`. The field shapes follow MCPB; AFPS introduces no new `server.type` values. Remote MCP endpoints, container surfaces, and other non-local capability surfaces are modeled as an `integration` `source` (§7.1), not as an `mcp-server`.
-- **Description**: Declares how the server is launched.
-- **Default**: none
-
-#### `tools`
-- **Type**: array of objects
-- **Required**: MAY
-- **Format**: each entry is `{ name, description }`. Advisory metadata; the authoritative tool list is obtained from the running MCP server.
-- **Default**: none
-
-#### `user_config`
-- **Type**: object
-- **Required**: MAY
-- **Format**: a map of user-supplied configuration entries following the MCPB `user_config` vocabulary (`type`, `title`, `description`, `required?`, `default?`, `multiple?`, `sensitive?`, `min?`, `max?`). An entry with `sensitive: true`, substituted as `${user_config.KEY}` into `server.mcp_config.env`, is the credential mechanism a `local` integration binds to (§7.6).
-- **Description**: User-configurable options the server requires at run time.
-- **Default**: none
-
-#### Required files and packaging
-
-An `mcp-server` archive MUST contain `manifest.json` at the archive root and the server payload referenced by `server.entry_point`. A published archive MUST be self-contained: every runtime dependency of the entry point MUST be bundled into the archive. An `icon`, if present, MUST be a relative path to a real PNG within the archive. The `.afps` extension is the canonical archive extension (§2.5).
-
-#### Relationship to MCPB
-
-The `server` / `tools` / `user_config` fields adopt the MCPB vocabulary verbatim so that producers can reuse MCPB tooling and conventions when authoring the server payload. The full AFPS manifest as published is **not** a strict MCPB manifest (it includes AFPS-native top-level fields outside the MCPB schema) and SHOULD NOT be expected to validate against the MCPB schema or install into an MCPB host as-is. A future minor of AFPS MAY define an interoperability projection that emits a strict-MCPB bundle alongside the AFPS archive.
-
-### 3.5 Integration Package
-
-An `integration` package is manifest-only (plus an optional `INTEGRATION.md` companion). It describes a **binding to an external service**: which capability surface the service is reached through (`source`), how the caller authenticates (`auths`, absent for a service that needs no credential), how an acquired credential is injected at runtime (`delivery`), and optional per-tool metadata. The full authentication model is specified in §7.
-
-An integration is service-centric: the service (for example Gmail, Stripe) is the identity, and the capability source is one way to reach it. Authentication is bound to the integration, not to the source. An integration is an AFPS-native manifest; it is never an MCPB manifest and is not installed directly into an MCPB host. When an integration's `source.kind` is `local`, it references an `mcp-server` package (§7.1); the integration's authentication layer is applied by the AFPS runtime on top of that server.
+An integration is service-centric: the service (for example Gmail, Stripe) is the identity, and the capability source is one way to reach it. Authentication is bound to the integration, not to the source. An integration is an AFPS-native manifest; it is never an MCPB manifest and is not installed directly into an MCPB host. When an integration's `source.kind` is `local`, it declares its MCP server inline and carries the server payload in its own archive (§7.1); the integration's authentication layer is applied by the AFPS runtime on top of that server. A `local` integration archive MUST contain the payload referenced by `source.server.entry_point`, and a published archive MUST be self-contained: every runtime dependency of the entry point MUST be bundled into the archive.
 
 #### Common fields
 
@@ -590,8 +546,8 @@ An integration manifest uses the common fields (§3.1): `name` (scoped), `versio
 - **Type**: object
 - **Required**: MUST for `integration`
 - **Format**: object with a `kind` discriminant and exactly one matching sub-object (§7.1)
-- **Description**: The capability surface the integration binds to: `local` (an `mcp-server`), `remote` (a hosted MCP endpoint), or `none` (no MCP backing — capabilities, if any, come from vendor `_meta` extensions).
-- **Example**: `{ "kind": "local", "server": { "name": "@example/gmail-server", "version": "^1.2.0" } }`
+- **Description**: The capability surface the integration binds to: `local` (a server declared inline and shipped in the archive), `remote` (a hosted MCP endpoint), or `none` (no MCP backing — capabilities, if any, come from vendor `_meta` extensions).
+- **Example**: `{ "kind": "local", "server": { "type": "node", "entry_point": "server/index.js", "mcp_config": { "command": "node", "args": ["${__dirname}/server/index.js"] } } }`
 - **Default**: none
 
 #### `auths`
@@ -638,8 +594,7 @@ A package declares its dependencies using the `dependencies` field. The field co
 {
   "dependencies": {
     "integrations": { "@acme/gmail": "^1.0.0" },
-    "skills": { "@acme/rewrite-tone": "^1.0.0" },
-    "mcp_servers": { "@acme/fetch-json": "^1.0.0" }
+    "skills": { "@acme/rewrite-tone": "^1.0.0" }
   }
 }
 ```
@@ -680,8 +635,8 @@ The following diagram illustrates how an agent composes its dependencies:
   ┌──────────────┐ ┌────────────┐ ┌────────────┐
   │ @acme/gmail  │ │ @acme/     │ │ @acme/     │
   │ integration  │ │ rewrite-   │ │ fetch-json │
-  │ (OAuth2)     │ │ tone       │ │ mcp-server │
-  │              │ │ skill      │ │            │
+  │ (OAuth2)     │ │ tone       │ │ integration│
+  │              │ │ skill      │ │ (local)    │
   └──────────────┘ └────────────┘ └────────────┘
 ```
 
@@ -843,7 +798,7 @@ A consumer MAY construct an execution context from:
 - the validated agent manifest;
 - `prompt.md`;
 - validated `input` data;
-- resolved skills, MCP servers, and integrations; and
+- resolved skills and integrations; and
 - per-integration configuration declared in the agent's top-level `integrations_configuration` map (§4.4) — `tools` (a string array, or the wildcard literal `"*"` when permitted by the integration's `allow_undeclared_tools`; when absent, the selection is the integration's `default_tools`, if any — §7.8), `scopes`, `auth_key`, and `required`.
 
 Whether an execution may start without a credential for a declared integration, and how the agent is then told, is governed by `required` (§4.4).
@@ -870,8 +825,18 @@ An integration authenticates the **upstream-credential hop** — the credential 
 "source": {
   "kind": "local" | "remote" | "none",
 
-  // kind = local: reference an mcp-server by AFPS identity + semver range (§2.2, §4).
-  "server": { "name": "@example/gmail-server", "version": "^1.2.0", "vendored": true },
+  // kind = local: the server is declared inline (MCPB vocabulary) and shipped in the archive.
+  "server": {
+    "type": "node",                                  // node | python | binary | uv
+    "entry_point": "server/index.js",                // relative path inside the integration archive
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {},                                     // literal, non-secret values only
+      "platform_overrides": {}
+    },
+    "tools": [{ "name": "fetch_json", "description": "Fetch a JSON document" }]  // OPTIONAL, advisory
+  },
 
   // kind = remote: a hosted MCP endpoint.
   "remote": { "url": "https://example.com/mcp", "transport": "streamable-http" | "sse" }
@@ -880,11 +845,38 @@ An integration authenticates the **upstream-credential hop** — the credential 
 }
 ```
 
-- **`local`** — `source.server` references an `mcp-server` package by its AFPS package identity (`name`, a scoped name per §2.2) and a semver `version` range. This is the only source whose referenced server is itself a standalone MCPB-runnable artifact; the integration's authentication layer is applied by the AFPS runtime on top. The optional `vendored` boolean records that the referenced MCP server was vendored into the publishing pipeline at build time (MCPB bundles dependencies into the archive rather than resolving registry references at install time). Build-provenance for a vendored foreign package (for example a [Package URL]) MAY be recorded under `_meta`; it is never the reference mechanism.
-- **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source has no `mcp-server` package and no `.mcpb` form. When the endpoint's location varies per connection (a self-hosted instance, a tenant host), `url` MAY be a URL template over connection variables (§7.12), e.g. `{$variable.base_url}/mcp`.
+- **`local`** — `source.server` is the **run declaration** of an MCP server the integration ships in its own archive. Its fields adopt the MCPB vocabulary verbatim:
+  - `type` (REQUIRED): one of `node`, `python`, `binary`, `uv`;
+  - `entry_point` (REQUIRED): a relative path, inside the integration archive, to the server entry point;
+  - `mcp_config` (REQUIRED): `{ command, args?, env?, platform_overrides? }`, with `command` REQUIRED. `mcp_config.env` carries **literal, non-secret values only**; credentials reach the server exclusively through the auth method's `delivery.env` / `delivery.files` (§7.6), rendered by the runtime into the server process. A `${user_config.*}` reference MUST NOT be relied on to supply a credential;
+  - `tools` (OPTIONAL): an advisory list of `{ name, description }` entries. It is the canonical tool catalog of a `local` source (§7.8); the authoritative list at run time is still obtained from the running server.
+
+  The archive MUST contain the server payload referenced by `entry_point`, and a published archive MUST be self-contained (§3.4). The integration's authentication layer is applied by the AFPS runtime on top of the server. Build provenance of bundled dependencies (for example a [Package URL]) MAY be recorded under `_meta`; it is never a reference mechanism.
+- **`remote`** — `source.remote` declares a hosted MCP endpoint with a `url` and a `transport` (`streamable-http` or `sse`). A remote source carries no server payload and has no `.mcpb` form. When the endpoint's location varies per connection (a self-hosted instance, a tenant host), `url` MAY be a URL template over connection variables (§7.12), e.g. `{$variable.base_url}/mcp`.
 - **`none`** — the integration declares no MCP backing. It exposes no MCP-tool catalog of its own; any capabilities it offers come from vendor `_meta` extensions (§10) — for example a runtime that injects credentials into a direct HTTP surface. The `kind` discriminant carries no further spec-defined fields. Vendor extensions are non-normative: a runtime that does not recognise them sees an integration with auth methods and no tools.
 
-A source whose surface is not a local MCP server (`remote`, or `none`) cannot be expressed as an `mcp-server` package and has no `.mcpb` form. This is a property of the source kind, not a runnability gradient.
+A source whose surface is not a local MCP server (`remote`, or `none`) carries no server payload and has no `.mcpb` form. This is a property of the source kind, not a runnability gradient.
+
+#### 7.1.1 MCPB Interoperability (Projection)
+
+A `local` integration maps mechanically to a strict MCP Bundle ([MCPB]) and back. The projection is defined between the `local` integration and the bundle's `manifest.json` plus payload; it does not change the AFPS archive.
+
+**Export (integration → `.mcpb`).** A producer emitting a bundle from a `local` integration MUST generate an MCPB `manifest.json` as follows:
+
+- `manifest_version` is `"0.3"`, or `"0.4"` when `source.server.type` is `uv`;
+- `name` is the integration `name` without its scope; `display_name`, `version`, `description`, `license`, `keywords`, `icon` (when present) and `author` (as `{ "name": … }`) are copied from the integration manifest;
+- `server` is `source.server` without `tools`; `tools` is `source.server.tools` when present;
+- each `delivery.env` entry of the auth method being exported becomes a `user_config` entry `{ "type": "string", "sensitive": <copied>, "required": true }`, whose `title` is the `title` of the credential field's schema when the entry's `value` template is exactly one `{$credential.<field>}` reference, and the entry is injected into `server.mcp_config.env` as `"${user_config.<VAR>}"`, `<VAR>` being the environment-variable name;
+- payload files are copied verbatim.
+
+An integration whose auth method uses `delivery.http` or `delivery.files`, or that declares more than one auth method, has no faithful MCPB form: a consumer MUST refuse the export rather than drop the credential.
+
+**Import (`.mcpb` → integration).** A consumer importing a bundle MUST build the integration as follows:
+
+- `source.server` is the bundle's `server` together with its `tools`;
+- every `user_config` entry with `sensitive: true` becomes a property of the `credentials.schema` of one `custom` auth method (a `string` property carrying the entry's `title` and `description`, with `writeOnly: true`), and every `${user_config.KEY}` reference in `mcp_config.env` becomes a `delivery.env` entry `{ "value": "{$credential.<KEY>}", "sensitive": true }`, the reference being removed from `mcp_config.env`;
+- a non-sensitive `user_config` entry with a `default` is inlined as a literal in `mcp_config.env`; a non-sensitive entry without a `default` MUST make the import fail, since an integration has no place to store it;
+- when no `user_config` entry is sensitive, the integration declares no `auths` and is unauthenticated (§7.2).
 
 ### 7.2 Auth Methods
 
@@ -1022,8 +1014,7 @@ The block below is a **syntax catalogue** showing all three delivery shapes; it 
   "env": {
     "GMAIL_TOKEN": {
       "value": "{$credential.access_token}",
-      "sensitive": true,
-      "user_config_key": "GMAIL_TOKEN"
+      "sensitive": true
     }
   },
   // File injection (Kubernetes-style vocabulary). `mode` is an octal string; default "0400".
@@ -1034,7 +1025,7 @@ The block below is a **syntax catalogue** showing all three delivery shapes; it 
 ```
 
 - **`http`** — credential injection into an HTTP request. `in` (`header`, `query`, `cookie`) and `name` adopt the OpenAPI Security Scheme location vocabulary; `prefix` and `value` are AFPS additions (OpenAPI has no value template). The combination `http` + `Authorization` + `"Bearer "` maps to the `Authorization: Bearer` convention. `encoding` is OPTIONAL and, when present, MUST be `base64` ([RFC 4648] §4), applied to the rendered `value` string (NOT to `prefix`), with the encoded result then concatenated after `prefix` — expressing HTTP Basic vendor patterns per [RFC 7617] (for example `value: "{$credential.email}/token:{$credential.api_key}"`, `prefix: "Basic "`, `encoding: "base64"` produces `Authorization: Basic <base64(email/token:api_key)>`, leaving the `"Basic "` scheme prefix unencoded). Consumers MUST reject an unknown `encoding`. `allow_server_override` (boolean, default `false`) governs whether the source server may override the injected value. HTTP delivery is a man-in-the-middle/proxy injection in which the source server never sees the secret.
-- **`env`** — injection as one or more environment variables. Each entry has a `value` template, an OPTIONAL `sensitive` boolean, and an OPTIONAL `user_config_key` string. `env` delivery maps onto MCPB `user_config` → `${user_config.KEY}` (§3.4): the source server holds the secret. `user_config_key` names the MCPB `user_config` key that an AFPS build step MUST inject into the referenced `mcp-server` so the rendered `value` reaches the server through `${user_config.<user_config_key>}` in `mcp_config.env`. When `user_config_key` is omitted, consumers SHOULD default to the env-variable name itself (the map key). This is the delivery mode that lets a `local`-source integration's referenced `mcp-server` also run standalone in an MCPB host.
+- **`env`** — injection as one or more environment variables. Each entry has a `value` template and an OPTIONAL `sensitive` boolean. For a `local` source (§7.1), the runtime renders each entry into the environment of the server process: the source server holds the secret. This is the delivery mode through which a credential reaches a `local` integration's server, and the one the MCPB projection (§7.1.1) maps to `user_config`.
 - **`files`** — injection as one or more files. Each entry has a `value` template and an OPTIONAL `mode` (an octal string such as `"0400"`; default `"0400"`).
 
 `http` (proxy injection, server never holds the secret) and `env`/`files` (server holds the secret) are mutually exclusive per auth method: an auth method MUST NOT mix `http` with `env`/`files`.
@@ -1162,9 +1153,9 @@ Once acquired, the connection is an ordinary `oauth2` connection: its expiry, it
 
 ### 7.8 Per-Tool Policy
 
-`integration.tools_policy` is an OPTIONAL **sparse policy table** keyed by tool name. It carries per-tool authorization metadata for `local` and `remote` sources. It is NOT the catalog of "tools this integration exposes" — that catalog is canonical to the referenced surface (the disambiguating reason for the `_policy` suffix, distinct from `mcp-server.tools` which IS such a catalog):
+`integration.tools_policy` is an OPTIONAL **sparse policy table** keyed by tool name. It carries per-tool authorization metadata for `local` and `remote` sources. It is NOT the catalog of "tools this integration exposes" — that catalog is canonical to the referenced surface (the disambiguating reason for the `_policy` suffix, distinct from `source.server.tools` which IS such a catalog for a local source):
 
-- for `source.kind = local`, the canonical catalog is the `tools[]` array of the referenced `mcp-server` package (§3.4);
+- for `source.kind = local`, the canonical catalog is the `tools[]` array of `source.server` (§7.1);
 - for `source.kind = remote`, the canonical catalog is obtained by introspecting the remote MCP endpoint at runtime;
 - for `source.kind = none`, there is no MCP-tool catalog and `integration.tools_policy` is generally not used.
 
@@ -1327,21 +1318,21 @@ ZIP archives are a well-known vector for path traversal and denial-of-service at
 
 Consumers SHOULD ignore `__MACOSX/` directories and other platform-specific metadata entries.
 
-### 8.2 MCP-Server Code Execution
+### 8.2 Local Server Code Execution
 
-MCP-server packages (§3.4) bundle a runnable server payload that consumers and MCPB hosts load and execute. This is the highest-risk surface in the AFPS model:
+The server payload of a `local` integration (§3.4, §7.1) is code that consumers load and execute. This is the highest-risk surface in the AFPS model:
 
 - consumers that execute server code SHOULD do so in a sandboxed environment with the minimum necessary permissions;
 - consumers SHOULD prevent server code from accessing the host filesystem, network, or environment variables beyond the scope the server requires;
 - consumers SHOULD apply a timeout to server execution to prevent resource exhaustion;
 - registries SHOULD perform static analysis or review of the bundled server payload before making a package publicly available; registries that build the payload at publish time SHOULD additionally verify that the emitted artifact was produced from the declared source tree;
-- consumers SHOULD verify any MCPB `sign` signature (§3.4) before executing a signed bundle.
+- consumers SHOULD verify the provenance of bundled dependencies recorded under the integration's `_meta` where available.
 
-AFPS does not define how server code is loaded or executed beyond delegating to MCPB. Consumers are responsible for implementing appropriate security measures for their execution environment.
+AFPS does not define how server code is loaded or executed beyond the run declaration in `source.server`. Consumers are responsible for implementing appropriate security measures for their execution environment.
 
 ### 8.3 Credential Handling
 
-Integration packages (§3.5, §7) describe authentication configurations that involve OAuth tokens, API keys, and other secrets:
+Integration packages (§3.4, §7) describe authentication configurations that involve OAuth tokens, API keys, and other secrets:
 
 - consumers MUST store credentials encrypted at rest;
 - consumers MUST NOT include credentials in manifest files, log entries, or error messages;
@@ -1368,7 +1359,7 @@ Packages distributed through registries are subject to supply chain attacks incl
 - registries SHOULD provide a mechanism to yank or retract compromised versions;
 - consumers SHOULD verify package integrity after download;
 - consumers SHOULD pin dependency versions or use lock files for production deployments;
-- because an `mcp-server` bundles its dependencies into the archive (§3.4), consumers SHOULD verify the provenance of vendored dependencies recorded under `_meta` where available;
+- because a `local` integration bundles its server dependencies into the archive (§3.4), consumers SHOULD verify the provenance of bundled dependencies recorded under `_meta` where available;
 - an agent that omits `tools` inherits `default_tools` (§7.8) from whichever integration version its range resolves to, so an integration update can widen the agent's tool surface without the agent changing: producers SHOULD limit `default_tools` to the tools an agent declaring the integration is expected to need, and SHOULD NOT declare `"*"` as a default without need; the producer of an agent that needs a fixed surface SHOULD list its `tools`; and consumers SHOULD show the inherited selection wherever they show what an agent can access.
 
 ### 8.6 URI Restrictions
@@ -1436,7 +1427,7 @@ This convention:
 
 - prevents collisions with future AFPS fields and across vendors;
 - allows tooling to distinguish standard fields from extensions; and
-- carries vendor extension data (e.g. bundler provenance, runtime-specific hints) across all four package types without polluting the AFPS-defined root vocabulary.
+- carries vendor extension data (e.g. bundler provenance, runtime-specific hints) across all three package types without polluting the AFPS-defined root vocabulary.
 
 Consumers MUST NOT reject manifests that contain unknown `_meta` keys, and MUST NOT fail on `_meta` values they do not understand. Consumers MAY ignore extension data they do not understand and SHOULD preserve it when round-tripping manifests.
 
@@ -1500,8 +1491,8 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | --- | --- | --- | --- | --- | --- |
 | `name` | all manifests | string | MUST | scoped name `@scope/name` (§2.2) | none |
 | `version` | all manifests | string | MUST | valid semver version | none |
-| `type` | all manifests | string | MUST | `agent\|skill\|mcp-server\|integration` | none |
-| `display_name` | all manifests | string | MUST for agent; SHOULD for skill, mcp-server, integration | agent value min length 1 | none |
+| `type` | all manifests | string | MUST | `agent\|skill\|integration` | none |
+| `display_name` | all manifests | string | MUST for agent; SHOULD for skill, integration | agent value min length 1 | none |
 | `description` | all manifests | string | MAY | free text | none |
 | `long_description` | all manifests | string | MAY | Markdown long-form description | none |
 | `keywords` | all manifests | string[] | MAY | arbitrary strings | none |
@@ -1516,10 +1507,9 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `screenshots` | all manifests | string[] | MAY | image paths/URIs | none |
 | `privacy_policies` | all manifests | string[] | MAY | privacy-policy URIs | none |
 | `compatibility` | all manifests | object | MAY | `{ platforms?, runtimes?, clients? }` | none |
-| `schema_version` | all manifests | string | MUST for agent; MAY for skill, mcp-server, integration | `MAJOR.MINOR`; producers MUST emit `0.3` | none |
+| `schema_version` | all manifests | string | MUST for agent; MAY for skill, integration | `MAJOR.MINOR`; producers MUST emit `0.3` | none |
 | `dependencies` | all manifests | object | MAY | optional dependency maps (§4.1) | none |
 | `dependencies.skills` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
-| `dependencies.mcp_servers` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
 | `dependencies.integrations` | all manifests | map | MAY | keys scoped names; values semver range string (§4.1) | none |
 | `integrations_configuration` | agent | map | MAY | per-integration config keyed by declared integration id (§4.4) | none |
 | `integrations_configuration.<id>.tools` | agent | string[] \| "*" | MAY | integration tool names the agent consumes; `[]` selects none; when absent, the agent inherits the integration's `default_tools`, if any; `"*"` opts into all upstream tools when the integration declares `allow_undeclared_tools: true` (§4.4, §7.4, §7.8) | none |
@@ -1535,18 +1525,12 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `property_order` | agent schema wrapper | string[] | MAY | presentation order hint | none |
 | `timeout` | agent | number | MAY | timeout hint in seconds | none |
 | `prompt.md` | agent archive | file | MUST | non-empty companion file at archive root; the agent's objective (§6.1) | none |
-| `manifest_version` | mcp-server | string | MUST | tags the MCPB-vocabulary version of `server`/`tools`/`user_config`; `0.3` baseline, `0.4` for `uv` | none |
-| `server` | mcp-server | object | MUST | run declaration (`type`, `entry_point`, `mcp_config`); MCPB vocabulary | none |
-| `server.type` | mcp-server | string | MUST | `node\|python\|binary` (`manifest_version=0.3`); `uv` (`0.4`) | none |
-| `server.entry_point` | mcp-server | string | MUST | relative path within the archive to the server entry point; MCPB vocabulary | none |
-| `server.mcp_config` | mcp-server | object | MUST | `{ command, args?, env?, platform_overrides? }`; MCPB vocabulary | none |
-| `tools` | mcp-server | array | MAY | advisory tool list (`{ name, description }`); MCPB vocabulary | none |
-| `user_config` | mcp-server | object | MAY | user configuration; `sensitive: true` for secrets; MCPB vocabulary | none |
 | `source` | integration | object | MUST | `kind` ∈ `local\|remote\|none` plus matching sub-object (`none` has no sub-object) | none |
-| `source.server` | integration | object | MUST for `kind=local` | `{ name (scoped), version (range), vendored? }` | none |
-| `source.server.name` | integration | string | MUST for `kind=local` | scoped name of the referenced `mcp-server` (§2.2) | none |
-| `source.server.version` | integration | string | MUST for `kind=local` | semver range for the referenced `mcp-server` | none |
-| `source.server.vendored` | integration | boolean | MAY | records that the server payload is bundled MCPB-style | `false` |
+| `source.server` | integration | object | MUST for `kind=local` | inline run declaration (`type`, `entry_point`, `mcp_config`, `tools?`); MCPB vocabulary (§7.1) | none |
+| `source.server.type` | integration | string | MUST for `kind=local` | `node\|python\|binary\|uv` | none |
+| `source.server.entry_point` | integration | string | MUST for `kind=local` | relative path inside the integration archive to the server entry point | none |
+| `source.server.mcp_config` | integration | object | MUST for `kind=local` | `{ command, args?, env?, platform_overrides? }`; `env` holds literal non-secret values only | none |
+| `source.server.tools` | integration | array | MAY | advisory tool list (`{ name, description }`); canonical catalog of a local source (§7.8) | none |
 | `source.remote` | integration | object | MUST for `kind=remote` | `{ url, transport: streamable-http\|sse }` | none |
 | `source.remote.url` | integration | string | MUST for `kind=remote` | URI of the hosted MCP endpoint, or a URL template (§7.12) | none |
 | `source.remote.transport` | integration | string | MUST for `kind=remote` | `streamable-http\|sse` | none |
@@ -1575,10 +1559,9 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `auths.<key>.delivery.http.prefix` | integration | string | MAY | literal prefix prepended to the rendered value (e.g. `"Bearer "`) | none |
 | `auths.<key>.delivery.http.encoding` | integration | string | MAY | `base64` (RFC 4648 §4), applied to `value` only | none |
 | `auths.<key>.delivery.http.allow_server_override` | integration | boolean | MAY | whether the source server may override the injected value | `false` |
-| `auths.<key>.delivery.env` | integration | object | MAY | map of `VAR` → `{ value, sensitive?, user_config_key? }`; maps to MCPB `user_config` | none |
+| `auths.<key>.delivery.env` | integration | object | MAY | map of `VAR` → `{ value, sensitive? }`; rendered into the server process environment (§7.6) | none |
 | `auths.<key>.delivery.env.<var>.value` | integration | string | MUST if entry present | value template for the environment variable | none |
-| `auths.<key>.delivery.env.<var>.sensitive` | integration | boolean | MAY | marks the value secret (aligns with MCPB `user_config` `sensitive`) | `false` |
-| `auths.<key>.delivery.env.<var>.user_config_key` | integration | string | MAY | MCPB `user_config` key for `local`-source binding; defaults to the env-variable name | none |
+| `auths.<key>.delivery.env.<var>.sensitive` | integration | boolean | MAY | marks the value secret | `false` |
 | `auths.<key>.delivery.files.<path>.value` | integration | string | MUST if entry present | value template for the file contents | none |
 | `auths.<key>.delivery.files.<path>.mode` | integration | string | MAY | octal string (e.g. `"0400"`) | `"0400"` |
 | `auths.<key>.callback_url_hint` | integration | string | MAY | OAuth-client registration callback hint (often containing `{{callback_url}}`) | none |
@@ -1602,7 +1585,7 @@ When an extension carried under `_meta` gains broad adoption across multiple imp
 | `setup_guide.steps` | integration | object[] | MAY | ordered setup steps | none |
 | `setup_guide.steps[].label` | integration | string | MUST if step present | non-empty recommended | none |
 | `setup_guide.steps[].url` | integration | string | MAY | URI recommended | none |
-| `INTEGRATION.md` | integration archive | file | MAY | optional API documentation for agent consumption, disclosed by catalog entry and read on demand (§3.5); no required frontmatter | none |
+| `INTEGRATION.md` | integration archive | file | MAY | optional API documentation for agent consumption, disclosed by catalog entry and read on demand (§3.4); no required frontmatter | none |
 | `SKILL.md` frontmatter `name` | skill content | string | SHOULD | max 64 chars, lowercase alphanumeric and hyphens | none |
 | `SKILL.md` frontmatter `description` | skill content | string | SHOULD | max 1024 chars; missing value warns | none |
 | `SKILL.md` frontmatter `license` | skill content | string | MAY | license name or file reference | none |
@@ -1641,7 +1624,6 @@ Common consumer-side defaults observed in interoperable implementations include:
 | `auths.<key>.allow_all_uris` | `false` | resolved integration auth method |
 | `auths.<key>.delivery.files.<path>.mode` | `0400` | octal string |
 | `auths.<key>.connect.login.success_criteria` | HTTP 2xx | when omitted |
-| `manifest_version` | `0.3` | mcp-server MCPB baseline |
 | `schema_version` | `0.3` | common consumer default for new agents/integrations |
 | `timeout` | `300` | common consumer default for new agents |
 

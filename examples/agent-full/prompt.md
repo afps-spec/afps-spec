@@ -8,7 +8,7 @@ You have access to the following providers and tools:
 
 - **Gmail** (`@example/gmail`): read and send emails
 - **Rewrite Tone** (`@example/rewrite-tone`): adjust message tone for professional responses
-- **Fetch JSON** (`@example/fetch-json`): fetch JSON from a URL and return the parsed response
+- **Fetch JSON** (`@example/fetch-json-authenticated`): fetch JSON from a URL and return the parsed response
 
 ## Instructions
 
